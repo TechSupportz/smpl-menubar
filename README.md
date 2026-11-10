@@ -1,6 +1,6 @@
 ![smpl.menubar: a menu bar without the clutter](.github/banner.png)
 
-# smpl.menubar
+# [smpl.menubar](https://smpl-menubar.tnitish.com)
 
 A tiny menu bar app for macOS that hides the icons you don't need.
 
