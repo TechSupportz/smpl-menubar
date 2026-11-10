@@ -61,8 +61,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Opening the app again (Finder, Spotlight, Raycast) brings up Arrange.
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
+        openArrange()
+        return false
+    }
+
+    /// Quitting gives back every app this app switched off; the next launch hides them again.
     func applicationWillTerminate(_: Notification) {
-        model.setShown(hover: false, click: false)
+        hoverTimer?.invalidate()
+        model.restoreForQuit()
     }
 
     // MARK: Hover → Hidden section
@@ -173,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Arrange…", action: #selector(openArrange), keyEquivalent: ",").target = self
         let login = menu.addItem(withTitle: "Launch at Login", action: #selector(toggleLogin), keyEquivalent: "")
         login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        login.state = LoginItem.isOn ? .on : LoginItem.needsApproval ? .mixed : .off
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
@@ -182,19 +190,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleLogin() {
-        if SMAppService.mainApp.status == .enabled {
-            try? SMAppService.mainApp.unregister()
-        } else {
-            try? SMAppService.mainApp.register()
-        }
+        LoginItem.set(!(LoginItem.isOn || LoginItem.needsApproval))
     }
 
     @objc private func openArrange() {
         model.refresh()
         if window == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: ArrangeView(model: model)))
-            window.title = "smpl menubar"
-            window.setContentSize(NSSize(width: 720, height: 440))
+            window.title = "smpl.menubar"
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
+            window.isMovableByWindowBackground = true
+            window.setContentSize(NSSize(width: 820, height: 520))
             window.isReleasedWhenClosed = false
             window.center()
             self.window = window

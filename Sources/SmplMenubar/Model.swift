@@ -14,8 +14,15 @@ enum Section: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .visible: "Always in the menu bar"
-        case .hidden: "Shown on hover, gone 2s after"
-        case .alwaysHidden: "Shown when you click the dot"
+        case .hidden: "Shows when you hover the bar"
+        case .alwaysHidden: "Shows when you click the dot"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .visible: "eye"
+        case .hidden: "cursorarrow.rays"
+        case .alwaysHidden: "eye.slash"
         }
     }
 }
@@ -30,6 +37,8 @@ struct MenuApp: Identifiable, Hashable {
 @Observable
 final class Model {
     private(set) var apps: [MenuApp] = []
+    /// Apps switched off in System Settings, not by this app. Left alone until dragged into a section.
+    private(set) var switchedOffElsewhere: [MenuApp] = []
     private(set) var accessError = false
 
     /// Hidden section revealed by hovering the menu bar.
@@ -50,8 +59,8 @@ final class Model {
     private var sections: [String: Section] {
         didSet { Defaults.sections = sections.mapValues(\.rawValue) }
     }
-    /// Apps this app has switched off, so moving one back to Visible switches it on again
-    /// without touching apps you switched off yourself in System Settings.
+    /// Apps this app switched off, and only those. Moving one back to Visible, or quitting,
+    /// switches it on again; apps you switched off yourself in System Settings are never touched.
     private var managed: Set<String> {
         didSet { Defaults.managed = managed }
     }
@@ -60,6 +69,8 @@ final class Model {
     static let dividerName = "Divider"
     /// App bundle ID → bundle IDs that own its menu bar items.
     private var itemOwners: [String: Set<String>] = [:]
+    /// The switches from the last confirmed write.
+    private var lastWritten: [String: Bool]?
 
     init() {
         sections = Defaults.sections.compactMapValues(Section.init(rawValue:))
@@ -74,9 +85,13 @@ final class Model {
     }
 
     func move(_ id: String, to section: Section) {
-        guard sections[id] != section else { return }
+        // Dragging an app that was switched off elsewhere hands it to this app.
+        let adopting = switchedOffElsewhere.contains { $0.id == id }
+        if adopting { managed.insert(id) }
+        guard adopting || sections[id] != section else { return }
         sections[id] = section
         apply()
+        refresh()
     }
 
     /// Re-reads the list and shows the apps that currently have menu bar items.
@@ -92,51 +107,73 @@ final class Model {
         ControlCenterList.backupOnce(to: support.appending(path: "smpl-menubar/controlcenter-backup.plist"))
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         var seen = Set<String>()
-        apps = entries.compactMap { entry -> MenuApp? in
-            guard entry.bundleID != ownID, seen.insert(entry.bundleID).inserted else { return nil }
-            // First time we see an app you'd already switched off, keep it off: Always Hidden.
-            if sections[entry.bundleID] == nil, !entry.isAllowed {
-                sections[entry.bundleID] = .alwaysHidden
-                managed.insert(entry.bundleID)
+        var listed: [MenuApp] = []
+        var elsewhere: [MenuApp] = []
+        for entry in entries where entry.bundleID != ownID && seen.insert(entry.bundleID).inserted {
+            let section = sections[entry.bundleID] ?? .visible
+            if section == .visible, !entry.isAllowed, !managed.contains(entry.bundleID) {
+                elsewhere.append(Self.makeApp(entry.bundleID))
+                continue
             }
             let isRunning = running.contains(entry.bundleID) || entry.itemBundleIDs.contains(where: running.contains)
-            guard isRunning || sections[entry.bundleID, default: .visible] != .visible else { return nil }
-            return Self.makeApp(entry.bundleID)
+            guard isRunning || section != .visible else { continue }
+            listed.append(Self.makeApp(entry.bundleID))
         }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let byName: (MenuApp, MenuApp) -> Bool = { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        apps = listed.sorted(by: byName)
+        switchedOffElsewhere = elsewhere.sorted(by: byName)
     }
 
     /// Writes the switches the current state calls for.
     func apply() {
         var changes: [String: Bool] = [:]
-        var managed = self.managed
+        for id in managed where (sections[id] ?? .visible) == .visible {
+            changes[id] = true
+        }
         for (id, section) in sections where id != ownID {
             switch section {
-            case .visible:
-                if managed.contains(id) {
-                    changes[id] = true
-                    managed.remove(id)
-                }
-            case .hidden:
-                changes[id] = hoverShown || clickShown
-                managed.insert(id)
-            case .alwaysHidden:
-                changes[id] = clickShown
-                managed.insert(id)
+            case .visible: break
+            case .hidden: changes[id] = hoverShown || clickShown
+            case .alwaysHidden: changes[id] = clickShown
             }
         }
-        if managed != self.managed { self.managed = managed }
-        // Order first, so items that reappear land left of the dot: Hidden, then Always Hidden.
+        write(changes)
+    }
+
+    /// On quit, switches back on every app this app switched off. `managed` is kept, so the
+    /// next launch hides them again, and a crash before this leaves enough to recover.
+    func restoreForQuit() {
+        let changes = Dictionary(uniqueKeysWithValues: managed.map { ($0, true) })
+        accessError = !ControlCenterList.setAllowed(changes)
+    }
+
+    private func write(_ changes: [String: Bool]) {
+        // Same switches as last time (e.g. hover ending while everything is shown): nothing to do.
+        guard changes != lastWritten || accessError else { return }
+        // Order only matters when items reappear: Hidden, then Always Hidden, left of the dot.
         // macOS only reads the order when an item appears, so a pure hide skips it.
-        func owners(_ section: Section) -> Set<String> {
-            sections.filter { $0.value == section }.keys.reduce(into: Set<String>()) {
-                $0.formUnion(itemOwners[$1] ?? [$1])
-            }
-        }
         if changes.values.contains(true) {
+            func owners(_ section: Section) -> Set<String> {
+                sections.filter { $0.value == section }.keys.reduce(into: Set<String>()) {
+                    $0.formUnion(itemOwners[$1] ?? [$1])
+                }
+            }
             MenuBarLayout.place(ownID: ownID, dividerName: Self.dividerName, hiddenOwners: owners(.hidden), alwaysHiddenOwners: owners(.alwaysHidden))
         }
-        accessError = !ControlCenterList.setAllowed(changes)
+        let ok = ControlCenterList.setAllowed(changes)
+        accessError = !ok
+        // Only after a confirmed write: switched off → ours; restored in Visible → no longer ours.
+        guard ok else { return }
+        lastWritten = changes
+        var updated = managed
+        for (id, allowed) in changes {
+            if !allowed {
+                updated.insert(id)
+            } else if (sections[id] ?? .visible) == .visible {
+                updated.remove(id)
+            }
+        }
+        if updated != managed { managed = updated }
     }
 
     private static func makeApp(_ id: String) -> MenuApp {

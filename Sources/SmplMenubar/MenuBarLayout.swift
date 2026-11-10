@@ -13,13 +13,26 @@ enum MenuBarLayout {
     /// then whatever else was left of the dot. Items right of the dot are never touched,
     /// and relative order inside each group is kept.
     /// The divider (our second item) goes between Hidden and Always Hidden.
+    /// Reads back after writing; if MenuBarAgent replaced the table in between, lays out the fresh copy once more.
     static func place(ownID: String, dividerName: String, hiddenOwners: Set<String>, alwaysHiddenOwners: Set<String>) {
+        for _ in 0 ..< 2 {
+            let written = placeOnce(ownID: ownID, dividerName: dividerName,
+                                    hiddenOwners: hiddenOwners, alwaysHiddenOwners: alwaysHiddenOwners)
+            guard !written.isEmpty else { return }
+            CFPreferencesAppSynchronize(domain)
+            let table = CFPreferencesCopyAppValue(key, domain) as? [String: Any] ?? [:]
+            if written.allSatisfy({ position(table[$0.key]) == $0.value }) { return }
+        }
+    }
+
+    /// Returns the positions it wrote, empty if nothing needed changing.
+    private static func placeOnce(ownID: String, dividerName: String, hiddenOwners: Set<String>, alwaysHiddenOwners: Set<String>) -> [String: Int] {
         CFPreferencesAppSynchronize(domain)
         let dividerKey = "status:\(ownID)::\(dividerName)"
         guard var table = CFPreferencesCopyAppValue(key, domain) as? [String: Any], !table.isEmpty,
               let dotKey = table.keys.first(where: { owner(of: $0) == ownID && $0 != dividerKey }),
               let dot = position(table[dotKey])
-        else { return }
+        else { return [:] }
 
         func sorted(_ keys: [String]) -> [String] {
             keys.sorted { (position(table[$0]) ?? 0, $0) < (position(table[$1]) ?? 0, $1) }
@@ -30,17 +43,18 @@ enum MenuBarLayout {
         let managed = Set(hidden + always)
         let rest = sorted(keys.filter { !managed.contains($0) && (position(table[$0]) ?? 0) > dot })
 
-        var changed = false
+        var written: [String: Int] = [:]
         for (offset, itemKey) in (hidden + [dividerKey] + always + rest).enumerated() {
             let value = dot + offset + 1
             if position(table[itemKey]) != value {
                 table[itemKey] = value
-                changed = true
+                written[itemKey] = value
             }
         }
-        guard changed else { return }
+        guard !written.isEmpty else { return [:] }
         CFPreferencesSetAppValue(key, table as CFDictionary, domain)
         CFPreferencesAppSynchronize(domain)
+        return written
     }
 
     private static func owner(of key: String) -> String? {

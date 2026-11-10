@@ -28,10 +28,23 @@ enum ControlCenterList {
         }
     }
 
-    /// Applies `isAllowed` changes. Returns false if the list couldn't be read or safely written.
+    /// Applies `isAllowed` changes, then reads back to confirm. If another writer (System Settings,
+    /// MenuBarAgent) replaced the list in between, the changes are re-applied to the fresh copy once.
+    /// Returns false if the list couldn't be read, safely written, or confirmed.
     @discardableResult
     static func setAllowed(_ changes: [String: Bool]) -> Bool {
-        guard !changes.isEmpty, var raw = readRaw() else { return changes.isEmpty }
+        guard !changes.isEmpty else { return true }
+        for _ in 0 ..< 2 {
+            guard writeOnce(changes) else { return false }
+            if let entries = read(), changes.allSatisfy({ id, want in
+                entries.first { $0.bundleID == id }.map { $0.isAllowed == want } ?? true
+            }) { return true }
+        }
+        return false
+    }
+
+    private static func writeOnce(_ changes: [String: Bool]) -> Bool {
+        guard var raw = readRaw() else { return false }
         var changed = false
         for i in stride(from: 0, to: raw.count, by: 2) {
             guard let id = bundleID(raw[i]), let want = changes[id],
