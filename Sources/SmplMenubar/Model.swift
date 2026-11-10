@@ -32,11 +32,20 @@ final class Model {
     private(set) var apps: [MenuApp] = []
     private(set) var accessError = false
 
-    /// Hidden section revealed by hovering the dot.
-    var hoverShown = false { didSet { if hoverShown != oldValue { apply() } } }
+    /// Hidden section revealed by hovering the menu bar.
+    private(set) var hoverShown = false
     /// Everything revealed by clicking the dot.
-    var clickShown = false { didSet { if clickShown != oldValue { apply() } } }
+    private(set) var clickShown = false
     var isShowing: Bool { hoverShown || clickShown }
+
+    /// Sets both flags together and writes the switches at most once, and only when
+    /// what's on screen changes: every write makes macOS rebuild the affected items.
+    func setShown(hover: Bool, click: Bool) {
+        let wasShowing = isShowing, wasClick = clickShown
+        hoverShown = hover
+        clickShown = click
+        if isShowing != wasShowing || clickShown != wasClick { apply() }
+    }
 
     private var sections: [String: Section] {
         didSet { Defaults.sections = sections.mapValues(\.rawValue) }
@@ -100,6 +109,7 @@ final class Model {
     /// Writes the switches the current state calls for.
     func apply() {
         var changes: [String: Bool] = [:]
+        var managed = self.managed
         for (id, section) in sections where id != ownID {
             switch section {
             case .visible:
@@ -115,13 +125,17 @@ final class Model {
                 managed.insert(id)
             }
         }
+        if managed != self.managed { self.managed = managed }
         // Order first, so items that reappear land left of the dot: Hidden, then Always Hidden.
+        // macOS only reads the order when an item appears, so a pure hide skips it.
         func owners(_ section: Section) -> Set<String> {
             sections.filter { $0.value == section }.keys.reduce(into: Set<String>()) {
                 $0.formUnion(itemOwners[$1] ?? [$1])
             }
         }
-        MenuBarLayout.place(ownID: ownID, dividerName: Self.dividerName, hiddenOwners: owners(.hidden), alwaysHiddenOwners: owners(.alwaysHidden))
+        if changes.values.contains(true) {
+            MenuBarLayout.place(ownID: ownID, dividerName: Self.dividerName, hiddenOwners: owners(.hidden), alwaysHiddenOwners: owners(.alwaysHidden))
+        }
         accessError = !ControlCenterList.setAllowed(changes)
     }
 

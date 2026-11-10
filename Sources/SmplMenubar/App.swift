@@ -20,6 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var hoverTimer: Timer?
     private var leftBarAt: Date?
+    /// When the pointer arrived on the bar; hover reveals only after `revealDwell`,
+    /// so passing through the bar doesn't cost a reveal and a hide.
+    private var enteredBarAt: Date?
+    /// Set by click-to-hide, so hover doesn't reveal again until the pointer has left the bar.
+    private var hoverSuppressed = false
+    private static let revealDwell: TimeInterval = 0.25
+    private static let hideDelay: TimeInterval = 2
 
     func applicationDidFinishLaunching(_: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -55,34 +62,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_: Notification) {
-        model.hoverShown = false
-        model.clickShown = false
+        model.setShown(hover: false, click: false)
     }
 
     // MARK: Hover → Hidden section
 
-    /// Hovering the menu bar reveals Hidden; it goes 2 seconds after the pointer leaves the bar.
+    /// Resting on the menu bar reveals Hidden; it goes 2 seconds after the pointer leaves the bar.
     private func tickHover() {
-        let mouse = NSEvent.mouseLocation
-        let onBar = NSScreen.screens.contains { screen in
-            screen.frame.contains(mouse) && mouse.y >= screen.frame.maxY - NSStatusBar.system.thickness - 2
+        let onBar = Self.pointerIsOnMenuBar(revealed: model.hoverShown)
+        if !onBar {
+            hoverSuppressed = false
+            enteredBarAt = nil
         }
 
-        if onBar, !model.hoverShown {
-            model.hoverShown = true
-            updateIcon()
+        if onBar, !model.hoverShown, !hoverSuppressed {
+            if let entered = enteredBarAt {
+                if Date().timeIntervalSince(entered) >= Self.revealDwell {
+                    enteredBarAt = nil
+                    model.setShown(hover: true, click: model.clickShown)
+                    updateIcon()
+                }
+            } else {
+                enteredBarAt = Date()
+            }
         }
         guard model.hoverShown else { return }
         if onBar {
             leftBarAt = nil
         } else if let left = leftBarAt {
-            if Date().timeIntervalSince(left) >= 2 {
+            if Date().timeIntervalSince(left) >= Self.hideDelay {
                 leftBarAt = nil
-                model.hoverShown = false
+                model.setShown(hover: false, click: model.clickShown)
                 updateIcon()
             }
         } else {
             leftBarAt = Date()
+        }
+    }
+
+    /// Uses each screen's real bar height (taller than `NSStatusBar.thickness` beside a notch).
+    /// Where the bar is hidden (full screen), only the top edge that brings it down reveals;
+    /// once revealed, the usual bar strip keeps it shown.
+    private static func pointerIsOnMenuBar(revealed: Bool) -> Bool {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.contains { screen in
+            guard screen.frame.contains(mouse) else { return false }
+            let bar = max(screen.frame.maxY - screen.visibleFrame.maxY, screen.safeAreaInsets.top)
+            let height = bar > 0 ? bar : (revealed ? NSStatusBar.system.thickness + 2 : 2)
+            return mouse.y >= screen.frame.maxY - height
         }
     }
 
@@ -93,8 +120,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showMenu()
             return
         }
-        model.clickShown.toggle()
-        if !model.clickShown { model.hoverShown = false }
+        if model.clickShown {
+            // One write hides both sections; hover stays off until the pointer leaves the bar.
+            hoverSuppressed = true
+            enteredBarAt = nil
+            leftBarAt = nil
+            model.setShown(hover: false, click: false)
+        } else {
+            model.setShown(hover: model.hoverShown, click: true)
+        }
         updateIcon()
     }
 
