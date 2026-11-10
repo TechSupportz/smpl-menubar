@@ -22,6 +22,12 @@ Under the hood it uses the same switch as **System Settings → Menu Bar**, so h
 
 Needs **macOS 27** or later.
 
+For direct installation, download the **DMG** from the
+[latest release](https://github.com/TechSupportz/smpl-menubar/releases/latest),
+open it, and drag **smpl.menubar** to **Applications**.
+
+Or install with Homebrew:
+
 ```sh
 brew install --cask TechSupportz/tap/smpl-menubar
 open /Applications/smpl.menubar.app

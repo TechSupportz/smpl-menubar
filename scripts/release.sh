@@ -74,4 +74,8 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
 else
   echo 'PREVIEW ONLY: not notarized; do not publish as the supported Homebrew release' > "$OUT/distribution-status.txt"
 fi
+if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+  scripts/dmg.sh "$APP" "$VERSION" "$OUT"
+  cat "$OUT/DMG-SHA256SUMS" >> "$OUT/SHA256SUMS"
+fi
 echo "Artifacts: $OUT"

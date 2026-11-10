@@ -22,6 +22,7 @@ for TOOL in git gh python3 ditto codesign xcrun spctl shasum; do
 done
 TAG="v$VERSION" OUT="$PWD/dist/$VERSION"
 ZIP="smpl-menubar-$VERSION-universal.zip"
+DMG="smpl-menubar-$VERSION-universal.dmg"
 ORIGIN=$(git remote get-url origin)
 case "$ORIGIN" in
   https://github.com/TechSupportz/smpl-menubar|https://github.com/TechSupportz/smpl-menubar.git|git@github.com:TechSupportz/smpl-menubar.git) ;;
@@ -67,15 +68,16 @@ import json, sys
 if json.load(open(sys.argv[1])).get('status') != 'Accepted': sys.exit('Notarization not accepted')
 PY
   verify_bundle "$OUT/$ZIP" "$WORK/extracted" > "$OUT/publish-verification.txt" 2>&1
+  scripts/verify-dmg.sh "$OUT/$DMG" "$WORK/extracted/smpl.menubar.app" >> "$OUT/publish-verification.txt" 2>&1
   python3 - "$OUT" "$VERSION" "$HEAD" "$ZIP" <<'PY'
 import hashlib, json, pathlib, sys
 out, version, commit, archive = sys.argv[1:]
 p = pathlib.Path(out)
-files = [archive, 'SHA256SUMS', 'smpl-menubar.rb']
+files = [archive, 'smpl-menubar-'+version+'-universal.dmg', 'SHA256SUMS', 'smpl-menubar.rb']
 data = dict(version=version, commit=commit, assets={f: hashlib.sha256((p/f).read_bytes()).hexdigest() for f in files})
 (p/'publish-manifest.json').write_text(json.dumps(data, indent=2)+'\n')
 PY
-  gh release create "$TAG" "$OUT/$ZIP" "$OUT/SHA256SUMS" "$OUT/smpl-menubar.rb" \
+  gh release create "$TAG" "$OUT/$ZIP" "$OUT/$DMG" "$OUT/SHA256SUMS" "$OUT/smpl-menubar.rb" \
     --repo "$REPO" --target "$HEAD" --draft --title "smpl.menubar $VERSION" --generate-notes
   echo "Draft created. Review notes and smoke-test before: scripts/publish.sh publish $VERSION"
 else
@@ -88,7 +90,7 @@ m = json.loads((p/'publish-manifest.json').read_text()); r = json.load(open(sys.
 if not (m['version'] == version and re.fullmatch('[0-9a-f]{40}', m['commit'])): sys.exit('Invalid provenance')
 if not (r['isDraft'] and r['tagName'] == 'v'+version): sys.exit('Release is not the expected draft')
 if not (r['targetCommitish'] == m['commit']): sys.exit('Draft target changed')
-expected = {'smpl-menubar-'+version+'-universal.zip', 'SHA256SUMS', 'smpl-menubar.rb'}
+expected = {'smpl-menubar-'+version+'-universal.zip', 'smpl-menubar-'+version+'-universal.dmg', 'SHA256SUMS', 'smpl-menubar.rb'}
 if not (set(m['assets']) == expected): sys.exit('Invalid asset list')
 for name, digest in m['assets'].items():
     if not (hashlib.sha256((p/name).read_bytes()).hexdigest() == digest): sys.exit('Local asset changed: '+name)
@@ -102,7 +104,7 @@ PY
     [[ "$TAG_HEAD" == "$HEAD" ]] || fail 'Remote tag points to another commit'
   fi
   gh release download "$TAG" --repo "$REPO" --dir "$WORK/download" \
-    --pattern "$ZIP" --pattern SHA256SUMS --pattern smpl-menubar.rb
+    --pattern "$ZIP" --pattern "$DMG" --pattern SHA256SUMS --pattern smpl-menubar.rb
   python3 - "$OUT/publish-manifest.json" "$WORK/download" <<'PY'
 import hashlib, json, pathlib, sys
 m = json.load(open(sys.argv[1])); p = pathlib.Path(sys.argv[2])
@@ -110,6 +112,7 @@ for name, digest in m['assets'].items():
     if not (hashlib.sha256((p/name).read_bytes()).hexdigest() == digest): sys.exit('Uploaded asset differs: '+name)
 PY
   verify_bundle "$WORK/download/$ZIP" "$WORK/extracted" > "$OUT/publish-verification.txt" 2>&1
+  scripts/verify-dmg.sh "$WORK/download/$DMG" "$WORK/extracted/smpl.menubar.app" >> "$OUT/publish-verification.txt" 2>&1
   gh release edit "$TAG" --repo "$REPO" --draft=false
   echo "Published https://github.com/$REPO/releases/tag/$TAG"
   echo "Next: copy $OUT/smpl-menubar.rb into the tap's Casks/ directory and review/commit/push it."
