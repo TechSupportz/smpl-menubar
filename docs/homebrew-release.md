@@ -1,7 +1,7 @@
-# Homebrew distribution (proposed)
+# Homebrew distribution
 
-Use `TechSupportz/homebrew-tap`, with `Casks/smpl-menubar.rb` copied from the
-release output. The tap does not exist as part of this change. The template in
+Use [TechSupportz/homebrew-tap](https://github.com/TechSupportz/homebrew-tap),
+with `Casks/smpl-menubar.rb` copied from the release output. The template in
 `packaging/smpl-menubar.rb.in` is a draft, not an installable cask: the release
 script fills in a real version and SHA-256. Homebrew's macOS 27 name is
 `:golden_gate`. A ZIP avoids unnecessary DMG tooling.
@@ -117,12 +117,15 @@ partial draft may remain: inspect it on GitHub and finish or remove that draft
 manually before retrying. Never replace public ZIPs in place; use a new version.
 
 After publication, copy `dist/VERSION/smpl-menubar.rb` into the tap's `Casks/`
-directory, run `brew style --cask Casks/smpl-menubar.rb` and
+directory. If needed for auditing on Homebrew 6+, first run
+`brew trust --cask TechSupportz/tap/smpl-menubar`. Run
+`brew style --cask Casks/smpl-menubar.rb` and
 `brew audit --cask --online TechSupportz/tap/smpl-menubar`, then review and
 commit/push the tap change. Each candidate regenerates both `version` and
-`sha256`; no cross-repository token is needed. The tap must be created separately.
+`sha256`; no cross-repository token is needed. The public tap is `TechSupportz/homebrew-tap`;
+Homebrew names it `TechSupportz/tap`.
 
-## README Install snippet (enable after the tap and release are live)
+## README Install snippet
 
 Needs **macOS 27 or later**.
 

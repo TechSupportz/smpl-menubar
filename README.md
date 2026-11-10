@@ -23,12 +23,24 @@ Under the hood it uses the same switch as **System Settings → Menu Bar**, so h
 Needs **macOS 27** or later.
 
 ```sh
+brew install --cask --appdir=/Applications TechSupportz/tap/smpl-menubar
+open /Applications/smpl.menubar.app
+```
+
+The app must be in `/Applications` for macOS 27 to show its menu bar icon.
+Update with `brew upgrade --cask smpl-menubar`.
+
+You can also download the signed and notarized app from [GitHub Releases](https://github.com/TechSupportz/smpl-menubar/releases/latest).
+
+### Build from source
+
+With Xcode installed:
+
+```sh
 git clone https://github.com/TechSupportz/smpl-menubar.git
 cd smpl-menubar
 ./build.sh --run
 ```
-
-This builds the app and puts it in `/Applications`, which is the only place macOS 27 will show menu bar icons from. A Homebrew install is on the way.
 
 ### Full Disk Access
 
