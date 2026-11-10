@@ -23,7 +23,7 @@ Under the hood it uses the same switch as **System Settings → Menu Bar**, so h
 Needs **macOS 27** or later.
 
 ```sh
-brew install --cask --appdir=/Applications TechSupportz/tap/smpl-menubar
+brew install --cask TechSupportz/tap/smpl-menubar
 open /Applications/smpl.menubar.app
 ```
 
