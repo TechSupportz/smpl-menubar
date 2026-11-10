@@ -31,8 +31,8 @@
               }
             }
           ],
-          "image-name": "sfMenubarIcon.svg",
-          "name": "sfMenubarIcon",
+          "image-name": "bell.fill.svg",
+          "name": "bell.fill",
           "opacity-specializations": [
             {
               "appearance": "tinted",
@@ -40,9 +40,113 @@
             }
           ],
           "position": {
-            "scale": 2.15,
+            "scale": 0.8389,
             "translation-in-points": [
-              -130,
+              -298.64,
+              -180
+            ]
+          },
+          "opacity": 0.2
+        },
+        {
+          "fill-specializations": [
+            {
+              "value": "automatic"
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "gray:1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name": "switch.2.svg",
+          "name": "switch.2",
+          "opacity-specializations": [
+            {
+              "appearance": "tinted",
+              "value": 0.75
+            }
+          ],
+          "position": {
+            "scale": 0.8389,
+            "translation-in-points": [
+              -88.1,
+              -180
+            ]
+          },
+          "opacity": 0.45
+        },
+        {
+          "fill-specializations": [
+            {
+              "value": "automatic"
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "gray:1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name": "wifi.svg",
+          "name": "wifi",
+          "opacity-specializations": [
+            {
+              "appearance": "tinted",
+              "value": 0.75
+            }
+          ],
+          "position": {
+            "scale": 0.8389,
+            "translation-in-points": [
+              135.36,
+              -180
+            ]
+          }
+        },
+        {
+          "fill-specializations": [
+            {
+              "value": "automatic"
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "gray:1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name": "dot.svg",
+          "name": "dot",
+          "opacity-specializations": [
+            {
+              "appearance": "tinted",
+              "value": 0.75
+            }
+          ],
+          "position": {
+            "scale": 0.8389,
+            "translation-in-points": [
+              330.99,
               -180
             ]
           }
