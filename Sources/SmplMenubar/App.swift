@@ -4,7 +4,7 @@ import SwiftUI
 
 @main
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static func main() {
         let app = NSApplication.shared
         let delegate = AppDelegate()
@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let model = Model()
     private var statusItem: NSStatusItem!
-    /// Thin line between Hidden and Always Hidden, shown only while Always Hidden is.
+    /// Thin line between Hidden and Buried, shown only while Buried is.
     private var divider: NSStatusItem!
     private var window: NSWindow?
     private var hoverTimer: Timer?
@@ -45,9 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let wasBlocked = self.model.accessError
-                if wasBlocked || self.window?.isVisible == true { self.model.refresh() }
-                if wasBlocked, !self.model.accessError { self.model.apply() }
+                // A failed write is retried until one goes through, even if the list reads fine meanwhile.
+                let retry = self.model.accessError || self.model.writePending
+                if retry || self.window?.isVisible == true { self.model.refresh() }
+                if retry, !self.model.accessError { self.model.apply() }
             }
         }
 
@@ -55,10 +56,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.tickHover() }
         }
 
-        if model.accessError || !UserDefaults.standard.bool(forKey: "launchedBefore") {
-            UserDefaults.standard.set(true, forKey: "launchedBefore")
+        // Opening the app yourself brings up Arrange; starting at login stays in the menu bar.
+        if model.accessError || !Self.launchedAsLoginItem() {
             openArrange()
         }
+    }
+
+    private static func launchedAsLoginItem() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventID == kAEOpenApplication else { return false }
+        return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
     /// Opening the app again (Finder, Spotlight, Raycast) brings up Arrange.
@@ -202,12 +209,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
             window.isMovableByWindowBackground = true
-            window.setContentSize(NSSize(width: 820, height: 520))
+            window.setContentSize(NSSize(width: 980, height: 540))
             window.isReleasedWhenClosed = false
+            // Like System Settings: no full screen; the green button makes the window full height.
+            window.collectionBehavior.insert(.fullScreenNone)
             window.center()
+            window.delegate = self
             self.window = window
+        }
+        // A Dock icon and app menu while Arrange is open, like a regular app.
+        if NSApp.activationPolicy() != .regular {
+            NSApp.mainMenu = Self.mainMenu()
+            NSApp.setActivationPolicy(.regular)
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Zoom keeps the width and fills the screen's height, as System Settings does.
+    func windowWillUseStandardFrame(_ window: NSWindow, defaultFrame newFrame: NSRect) -> NSRect {
+        guard let screen = window.screen?.visibleFrame else { return newFrame }
+        return NSRect(x: window.frame.minX, y: screen.minY, width: window.frame.width, height: screen.height)
+    }
+
+    /// Closing Arrange takes the app back to the menu bar only.
+    func windowWillClose(_: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    private static func mainMenu() -> NSMenu {
+        let main = NSMenu()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Quit smpl.menubar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(withTitle: "", action: nil, keyEquivalent: "").submenu = appMenu
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
+        return main
     }
 }

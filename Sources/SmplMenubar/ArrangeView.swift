@@ -1,14 +1,12 @@
 import ServiceManagement
 import SwiftUI
 
-/// Columns run in the menu bar's own order: Always Hidden, Hidden, then the dot, then Visible.
+/// Columns run from most to least visible. Top to bottom in a column is left to right in the bar.
 struct ArrangeView: View {
     let model: Model
 
-    private let order: [Section] = [.alwaysHidden, .hidden, .visible]
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             Header()
 
             if model.accessError {
@@ -16,27 +14,17 @@ struct ArrangeView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            GlassEffectContainer(spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(order) { section in
-                        SectionCard(section: section, model: model)
-                    }
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(Section.allCases) { section in
+                    SectionCard(section: section, model: model)
                 }
-            }
-
-            if !model.switchedOffElsewhere.isEmpty {
-                SwitchedOffStrip(apps: model.switchedOffElsewhere)
-                    .transition(.opacity)
             }
 
             Footer()
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 4)
-        .padding(.bottom, 20)
-        .frame(minWidth: 760, minHeight: 460)
+        .padding(20)
+        .frame(minWidth: 920, minHeight: 460)
         .animation(.smooth(duration: 0.3), value: model.accessError)
-        .animation(.smooth(duration: 0.3), value: model.switchedOffElsewhere)
     }
 }
 
@@ -44,14 +32,20 @@ struct ArrangeView: View {
 
 private struct Header: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("smpl.menubar")
-                .font(.system(size: 28, weight: .black))
-                .italic()
-                .tracking(-0.5)
-            Text("Drag apps between sections. The dot sits between Hidden and Visible.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 56, height: 56)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("smpl.menubar")
+                    .font(.system(size: 28, weight: .black))
+                    .italic()
+                    .tracking(-0.5)
+                Text("Drag apps between sections, or up and down to reorder.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -67,59 +61,71 @@ private struct SectionCard: View {
         let apps = model.apps(in: section)
 
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: section.symbol)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18)
+            HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(section.title).font(.headline)
+                    Text(section.title).font(.title3.weight(.semibold))
                     Text(section.subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                Text("\(apps.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                    .contentTransition(.numericText())
+                Image(systemName: section.symbol)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 4)
 
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(apps) { app in
-                        AppRow(app: app)
-                            .draggable(app.id) {
-                                AppRow(app: app).frame(width: 200)
-                            }
-                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        ReorderableRow(app: app, section: section, model: model)
+                            .transition(.opacity)
                     }
                 }
                 .animation(.smooth(duration: 0.3), value: apps)
             }
             .scrollIndicators(.never)
-            .overlay {
-                if apps.isEmpty {
-                    Text("Drop apps here")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                }
-            }
             .frame(maxHeight: .infinity)
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .glassEffect(isTargeted ? .regular.tint(.accentColor.opacity(0.18)).interactive() : .regular,
-                     in: .rect(cornerRadius: 24))
-        .scaleEffect(isTargeted ? 1.01 : 1)
-        .animation(.smooth(duration: 0.2), value: isTargeted)
+        .groupBox(highlighted: isTargeted)
         .dropDestination(for: String.self) { ids, _ in
             withAnimation(.smooth(duration: 0.3)) {
                 ids.forEach { model.move($0, to: section) }
             }
             return true
         } isTargeted: { isTargeted = $0 }
+    }
+}
+
+/// Dropping onto a row puts the dragged app just above it; a line shows where it lands.
+private struct ReorderableRow: View {
+    let app: MenuApp
+    let section: Section
+    let model: Model
+    @State private var isTargeted = false
+
+    var body: some View {
+        AppRow(app: app)
+            .draggable(app.id) {
+                AppRow(app: app).frame(width: 200)
+            }
+            .overlay(alignment: .top) {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+                    .padding(.horizontal, 8)
+                    .offset(y: -2)
+                    .opacity(isTargeted ? 1 : 0)
+            }
+            .animation(.easeOut(duration: 0.12), value: isTargeted)
+            .dropDestination(for: String.self) { ids, _ in
+                withAnimation(.smooth(duration: 0.3)) {
+                    ids.forEach { model.move($0, to: section, before: app.id) }
+                }
+                return true
+            } isTargeted: { isTargeted = $0 }
     }
 }
 
@@ -144,7 +150,6 @@ private struct AppRow: View {
         .background(.primary.opacity(isHovered ? 0.06 : 0), in: .rect(cornerRadius: 10))
         .contentShape(.rect(cornerRadius: 10))
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 }
 
@@ -153,59 +158,24 @@ private struct AppRow: View {
 private struct AccessBanner: View {
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "lock.fill")
-                .font(.title3)
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Full Disk Access needed").font(.headline)
-                Text("smpl.menubar uses the same switch as System Settings → Menu Bar, which lives in a protected file.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("smpl.menubar needs Full Disk Access to hide apps.")
             Spacer(minLength: 12)
             Button("Open Settings") {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
         }
         .padding(14)
-        .glassEffect(in: .rect(cornerRadius: 20))
+        .groupBox()
     }
 }
 
-/// Apps switched off in System Settings. smpl.menubar leaves them alone; drag one into a section to hand it over.
-private struct SwitchedOffStrip: View {
-    let apps: [MenuApp]
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Off in System Settings").font(.subheadline.weight(.semibold))
-                Text("Drag into a section to manage")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .fixedSize()
-            ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(apps) { app in
-                        Image(nsImage: app.icon)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: 26, height: 26)
-                            .opacity(0.6)
-                            .help(app.name)
-                            .draggable(app.id) {
-                                AppRow(app: app).frame(width: 200)
-                            }
-                    }
-                }
-            }
-            .scrollIndicators(.never)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .glassEffect(in: .rect(cornerRadius: 18))
+private extension View {
+    /// A System Settings–style group: a slightly raised fill with a hairline edge.
+    func groupBox(highlighted: Bool = false) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return background(highlighted ? Color.accentColor.opacity(0.12) : Color(nsColor: .quaternarySystemFill), in: shape)
+            .overlay(shape.strokeBorder(highlighted ? Color.accentColor : Color(nsColor: .separatorColor)))
     }
 }
 
@@ -231,9 +201,9 @@ private struct Footer: View {
                     .font(.caption)
             }
             Spacer()
-            Text("Hover the menu bar to peek · click the dot for everything")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            Link("built by nitish", destination: URL(string: "https://github.com/TechSupportz/smpl-menubar")!)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 4)
     }

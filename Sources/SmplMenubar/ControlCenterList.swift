@@ -77,6 +77,18 @@ enum ControlCenterList {
         (plist as NSDictionary).write(to: url, atomically: true)
     }
 
+    /// Apps switched off in the backup, i.e. before this app ever wrote anything; nil if unreadable.
+    static func switchedOff(inBackup url: URL) -> Set<String>? {
+        guard let plist = NSDictionary(contentsOf: url), let data = plist[key as String] as? Data,
+              let raw = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [Any]
+        else { return nil }
+        return Set(stride(from: 0, to: raw.count - 1, by: 2).compactMap { i in
+            guard let id = bundleID(raw[i]), let value = raw[i + 1] as? [String: Any],
+                  value["isAllowed"] as? Bool == false else { return nil }
+            return id
+        })
+    }
+
     private static func readRaw() -> [Any]? {
         CFPreferencesAppSynchronize(domain)
         guard let data = CFPreferencesCopyAppValue(key, domain) as? Data, !data.isEmpty,
