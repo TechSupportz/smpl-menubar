@@ -1,0 +1,121 @@
+---
+import "../styles/global.css";
+import MenuBarDemo from "../components/MenuBarDemo";
+
+const brew = "brew install --cask TechSupportz/tap/smpl-menubar";
+const title = "smpl.menubar";
+const description = "A tiny menu bar app for macOS that hides the icons you don't need.";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content="https://smpl-menubar.tnitish.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#f2f2f3" />
+    <link rel="icon" href="/favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="h-dvh overflow-hidden bg-paper font-sans text-ink antialiased">
+    <main class="flex h-dvh flex-col">
+      <section class="rise mx-auto flex w-full max-w-[1200px] shrink-0 flex-col items-center px-4 pt-[clamp(2.5rem,8vh,6rem)] text-center">
+        <img
+          src="/icon.png"
+          alt="smpl.menubar app icon"
+          width="512"
+          height="512"
+          class="size-28 drop-shadow-[0_18px_30px_rgba(0,0,0,0.12)] md:size-36 lg:size-44"
+        />
+
+        <h1 class="wide mt-8 text-[clamp(2.1rem,7vw,3.5rem)] leading-[1.02] font-semibold tracking-[-0.035em] text-balance lg:text-[min(4vw,4.5rem)] lg:whitespace-nowrap">
+          Your menu bar, minus the mess.
+        </h1>
+
+        <div class="mt-10 flex w-full max-w-md flex-col items-stretch gap-3 md:w-auto md:max-w-none md:flex-row md:items-center">
+          <a
+            href="/download"
+            class="inline-flex h-12 items-center justify-center gap-2.5 rounded-full bg-ink px-6 text-[15px] font-medium text-white transition-transform duration-150 ease-out focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ink active:scale-[0.97]"
+          >
+            <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 2v9M4 7.5 8 11.5l4-4M3 14h10" />
+            </svg>
+            Download for Mac
+          </a>
+
+          <button
+            type="button"
+            id="copy"
+            data-cmd={brew}
+            class="flex min-h-12 items-center gap-3 rounded-[24px] border border-black/10 bg-white/70 py-2.5 pr-4 pl-5 text-left font-mono text-[12px] leading-[18px] text-ink/80 transition-[transform,background-color] duration-150 ease-out hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ink active:scale-[0.98] md:rounded-full md:text-[13px]"
+          >
+            <span class="sr-only">Copy Homebrew install command: </span>
+            <code class="min-w-0 flex-1 select-all [overflow-wrap:anywhere] md:whitespace-nowrap"><span class="text-ink/35 select-none" aria-hidden="true">$ </span>{brew}</code>
+            <span class="relative size-4 shrink-0 text-ink/55">
+              <svg data-icon="copy" viewBox="0 0 16 16" class="absolute inset-0 size-4 transition-[opacity,scale] duration-200" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <rect x="5" y="5" width="9" height="9" rx="2" /><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
+              </svg>
+              <svg data-icon="check" viewBox="0 0 16 16" class="absolute inset-0 size-4 scale-75 text-ink opacity-0 transition-[opacity,scale] duration-200" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m3 8.5 3.2 3L13 4.5" />
+              </svg>
+            </span>
+          </button>
+        </div>
+        <p id="copy-status" class="sr-only" role="status" aria-live="polite"></p>
+
+        <p class="mt-5 text-[13px] text-[#66666b]">
+          macOS 27 or later ·{" "}
+          <a href="https://github.com/TechSupportz/smpl-menubar" class="underline decoration-ink/25 underline-offset-4 transition-colors hover:text-ink focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ink">GitHub</a>
+        </p>
+      </section>
+
+      <section class="mx-auto mt-[clamp(2rem,6vh,4.5rem)] min-h-0 w-full max-w-6xl flex-1 lg:px-4">
+        <MenuBarDemo client:visible />
+      </section>
+    </main>
+
+    <script>
+      const btn = document.getElementById("copy") as HTMLButtonElement;
+      const icon = btn.querySelector<SVGElement>('[data-icon="copy"]')!;
+      const check = btn.querySelector<SVGElement>('[data-icon="check"]')!;
+      const status = document.getElementById("copy-status")!;
+      let timer: number | undefined;
+
+      function show(text: string, ok = true) {
+        if (ok) {
+          icon.classList.add("opacity-0", "scale-75");
+          check.classList.remove("opacity-0", "scale-75");
+        }
+        status.textContent = text;
+        clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          icon.classList.remove("opacity-0", "scale-75");
+          check.classList.add("opacity-0", "scale-75");
+          status.textContent = "";
+        }, 1600);
+      }
+
+      btn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.cmd!);
+          show("Copied");
+        } catch {
+          const range = document.createRange();
+          range.selectNodeContents(btn.querySelector("code")!);
+          getSelection()?.removeAllRanges();
+          getSelection()?.addRange(range);
+          show("Couldn’t copy", false);
+        }
+      });
+    </script>
+  </body>
+</html>

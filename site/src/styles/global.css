@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-paper: #f2f2f3;
+  --color-ink: #111113;
+}
+
+html { background: var(--color-paper); color: var(--color-ink); }
+.wide { font-variation-settings: "wdth" 125; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise 200ms ease-out both; }
+  @keyframes rise { from { opacity: 0; } }
+}

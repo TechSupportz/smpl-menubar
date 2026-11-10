@@ -1,0 +1,12 @@
+{
+  "name": "smpl-menubar-site",
+  "main": "worker.js",
+  "account_id": "8ef5f0769d30e76799982b88b435da03",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/download"]
+  },
+  "routes": [{ "pattern": "smpl-menubar.tnitish.com", "custom_domain": true }]
+}
