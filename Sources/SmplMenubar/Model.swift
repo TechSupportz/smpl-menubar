@@ -191,10 +191,43 @@ final class Model {
             return
         }
         let ids = apps(in: section).map(\.id).filter { !(itemOwners[$0] ?? [$0]).isDisjoint(with: moved) }
-        guard !ids.isEmpty else { return }
-        managed.formUnion(ids)
+        cycle(ids)
+    }
+
+    /// Rebuilds the whole menu bar from Arrange: every listed app's switch is flipped to the
+    /// opposite of what its section calls for, then set right a moment later, in order. Every
+    /// switch really changes, so macOS redraws each item, even one stuck on screen while its saved
+    /// switch already says off. Hidden, Buried and Disabled apps flash briefly as a result.
+    /// Apps switched off in System Settings aren't touched.
+    func resync() {
+        refresh()
+        guard !accessError else { return }
+        _ = MenuBarLayout.reorderRightOfDot(ownID: ownID, dividerName: Self.dividerName, ranks: ownerRanks(.visible))
+        placeLeftOfDot()
+        let target = desiredSwitches()
+        let flipped = Dictionary(uniqueKeysWithValues: apps.map(\.id)
+            .filter { !offElsewhere.contains($0) }
+            .map { ($0, !(target[$0] ?? true)) })
+        if flipped.isEmpty {
+            lastWritten = nil
+            apply()
+        } else {
+            cycle(flipped)
+        }
+    }
+
+    /// Switches `ids` off, then a moment later writes every switch from the state as it is then.
+    private func cycle(_ ids: [String]) {
+        cycle(Dictionary(uniqueKeysWithValues: ids.map { ($0, false) }))
+    }
+
+    /// Writes `changes`, then a moment later writes every switch from the state as it is then.
+    private func cycle(_ changes: [String: Bool]) {
+        guard !changes.isEmpty else { return }
+        // Apps switched off count as ours meanwhile, so quitting restores them.
+        managed.formUnion(changes.filter { !$0.value }.keys)
         lastWritten = nil
-        if !ControlCenterList.setAllowed(Dictionary(uniqueKeysWithValues: ids.map { ($0, false) })) {
+        if !ControlCenterList.setAllowed(changes) {
             accessError = true
             writePending = true
         }
@@ -247,6 +280,10 @@ final class Model {
 
     /// Writes the switches the current state calls for.
     func apply() {
+        write(desiredSwitches())
+    }
+
+    private func desiredSwitches() -> [String: Bool] {
         var changes: [String: Bool] = [:]
         for id in managed where (sections[id] ?? .visible) == .visible {
             changes[id] = true
@@ -259,7 +296,7 @@ final class Model {
             case .disabled: changes[id] = false
             }
         }
-        write(changes)
+        return changes
     }
 
     /// On quit, switches back on every app this app switched off, except Disabled ones, which stay

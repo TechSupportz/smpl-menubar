@@ -7,7 +7,7 @@ struct ArrangeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Header()
+            Header(model: model)
 
             if model.accessError {
                 AccessBanner()
@@ -31,6 +31,8 @@ struct ArrangeView: View {
 // MARK: - Header
 
 private struct Header: View {
+    let model: Model
+
     var body: some View {
         HStack(spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage)
@@ -46,6 +48,10 @@ private struct Header: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            Spacer(minLength: 12)
+            Button("Refresh Menu Bar", systemImage: "arrow.clockwise") { model.resync() }
+                .help("Put every app back where Arrange says, in order")
+                .disabled(model.accessError)
         }
     }
 }

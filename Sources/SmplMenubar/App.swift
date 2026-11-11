@@ -186,6 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showMenu() {
         let menu = NSMenu()
         menu.addItem(withTitle: "Arrange…", action: #selector(openArrange), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Refresh Menu Bar", action: #selector(resync), keyEquivalent: "r").target = self
         let login = menu.addItem(withTitle: "Launch at Login", action: #selector(toggleLogin), keyEquivalent: "")
         login.target = self
         login.state = LoginItem.isOn ? .on : LoginItem.needsApproval ? .mixed : .off
@@ -194,6 +195,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc private func resync() {
+        model.resync()
     }
 
     @objc private func toggleLogin() {
