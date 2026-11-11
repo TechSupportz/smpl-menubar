@@ -1,22 +1,27 @@
 #!/bin/bash
-# Local Mac release orchestration. Explicit commands mutate GitHub; never commits.
+# Local Mac release orchestration. Explicit commands mutate GitHub. Never commits to this
+# repository; publish/tap commit and push only the cask in the Homebrew tap.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO=TechSupportz/smpl-menubar
+TAP=TechSupportz/homebrew-tap
+CASK=Casks/smpl-menubar.rb
 fail() { echo "Error: $*" >&2; exit 1; }
 usage() {
   echo 'Usage: scripts/publish.sh draft VERSION [BUILD_NUMBER]'
   echo '       scripts/publish.sh publish VERSION'
+  echo '       scripts/publish.sh tap VERSION'
   echo 'draft builds/notarizes, then creates a GitHub draft at the pushed HEAD.'
-  echo 'publish verifies that draft and makes it public. Neither updates the tap.'
+  echo 'publish verifies that draft, makes it public, then updates the tap.'
+  echo 'tap updates the Homebrew tap to an already published release (e.g. to retry).'
 }
 [[ ${1:-} != --help && ${1:-} != -h ]] || { usage; exit 0; }
 [[ $# -ge 2 && $# -le 3 ]] || { usage >&2; exit 1; }
 MODE=$1 VERSION=$2 BUILD=${3:-1}
-[[ "$MODE" == draft || "$MODE" == publish ]] || fail 'Choose draft or publish'
+[[ "$MODE" == draft || "$MODE" == publish || "$MODE" == tap ]] || fail 'Choose draft, publish or tap'
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Use a numeric X.Y.Z version'
 [[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || fail 'Build number must be positive'
-[[ "$MODE" != publish || $# -eq 2 ]] || fail 'publish takes no build number'
+[[ "$MODE" == draft || $# -eq 2 ]] || fail "$MODE takes no build number"
 for TOOL in git gh python3 ditto codesign xcrun spctl shasum; do
   command -v "$TOOL" >/dev/null || fail "Missing command: $TOOL"
 done
@@ -40,6 +45,30 @@ verify_bundle() {
   codesign --verify --deep --strict "$app"
   xcrun stapler validate "$app"
   spctl --assess --type execute --verbose=2 "$app"
+}
+# Points the tap's cask at the public release, after checking the generated cask's version and
+# checksum against the ZIP users actually download. Never moves the tap to an older version.
+update_tap() {
+  local cask="$OUT/smpl-menubar.rb" tap="$WORK/tap" sha current
+  [[ -f "$cask" ]] || fail "No generated cask at $cask"
+  [[ $(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft) == false ]] || fail "$TAG is not published"
+  grep -qx "  version \"$VERSION\"" "$cask" || fail 'Generated cask has the wrong version'
+  gh release download "$TAG" --repo "$REPO" --dir "$WORK/tap-zip" --pattern "$ZIP"
+  sha=$(shasum -a 256 "$WORK/tap-zip/$ZIP" | awk '{print $1}')
+  grep -qx "  sha256 \"$sha\"" "$cask" || fail 'Cask checksum does not match the published ZIP'
+  gh repo clone "$TAP" "$tap" -- --quiet
+  current=$(sed -n 's/^  version "\(.*\)"$/\1/p' "$tap/$CASK")
+  if [[ -n "$current" && "$current" != "$VERSION" ]] &&
+     [[ $(printf '%s\n' "$current" "$VERSION" | sort -V | tail -1) == "$current" ]]; then
+    fail "Tap already has newer $current"
+  fi
+  cp "$cask" "$tap/$CASK"
+  if git -C "$tap" diff --quiet; then echo "Tap already on $VERSION"; return; fi
+  if command -v brew >/dev/null; then brew style --cask "$tap/$CASK"; fi
+  git -C "$tap" add "$CASK"
+  git -C "$tap" commit --quiet -m "🍺 Update smpl.menubar to $VERSION"
+  git -C "$tap" push --quiet origin HEAD
+  echo "Tap updated: brew upgrade --cask smpl-menubar now installs $VERSION"
 }
 if [[ "$MODE" == draft ]]; then
   [[ -z $(git status --porcelain --untracked-files=normal) ]] || fail 'Commit intended changes first; checkout must be clean'
@@ -80,7 +109,7 @@ PY
   gh release create "$TAG" "$OUT/$ZIP" "$OUT/$DMG" "$OUT/SHA256SUMS" "$OUT/smpl-menubar.rb" \
     --repo "$REPO" --target "$HEAD" --draft --title "smpl.menubar $VERSION" --generate-notes
   echo "Draft created. Review notes and smoke-test before: scripts/publish.sh publish $VERSION"
-else
+elif [[ "$MODE" == publish ]]; then
   [[ -f "$OUT/publish-manifest.json" ]] || fail 'No candidate manifest; create a draft with this script first'
   gh release view "$TAG" --repo "$REPO" --json isDraft,targetCommitish,tagName > "$WORK/release.json"
   HEAD=$(python3 - "$OUT" "$VERSION" "$WORK/release.json" <<'PY'
@@ -115,5 +144,5 @@ PY
   scripts/verify-dmg.sh "$WORK/download/$DMG" "$WORK/extracted/smpl.menubar.app" >> "$OUT/publish-verification.txt" 2>&1
   gh release edit "$TAG" --repo "$REPO" --draft=false
   echo "Published https://github.com/$REPO/releases/tag/$TAG"
-  echo "Next: copy $OUT/smpl-menubar.rb into the tap's Casks/ directory and review/commit/push it."
 fi
+[[ "$MODE" == draft ]] || update_tap

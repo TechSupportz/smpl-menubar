@@ -105,9 +105,9 @@ GitHub; edit them in the draft and smoke-test the app before continuing.
 This verifies the recorded candidate, draft target, any existing remote tag,
 and downloaded asset hashes, then checks the downloaded app's signature,
 notarization ticket and Gatekeeper acceptance before publishing. GitHub creates
-the version tag at the draft target as part of its release flow if absent. The
-script never creates commits, pushes branches, moves tags, overwrites assets, or
-updates the tap. Neither command has been run against GitHub during setup.
+the version tag at the draft target as part of its release flow if absent. It
+then updates the tap (below). The script never commits to this repository, pushes
+its branches, moves tags or overwrites assets.
 
 Keep `dist/VERSION/`, including `publish-manifest.json`, between the two commands.
 Published v1.0.0 was extended with a DMG made from its exact published ZIP app;
@@ -117,14 +117,19 @@ If a build fails, move its output aside before retrying. If uploading fails, a
 partial draft may remain: inspect it on GitHub and finish or remove that draft
 manually before retrying. Never replace public ZIPs in place; use a new version.
 
-After publication, copy `dist/VERSION/smpl-menubar.rb` into the tap's `Casks/`
-directory. If needed for auditing on Homebrew 6+, first run
-`brew trust --cask TechSupportz/tap/smpl-menubar`. Run
-`brew style --cask Casks/smpl-menubar.rb` and
-`brew audit --cask --online TechSupportz/tap/smpl-menubar`, then review and
-commit/push the tap change. Each candidate regenerates both `version` and
-`sha256`; no cross-repository token is needed. The public tap is `TechSupportz/homebrew-tap`;
-Homebrew names it `TechSupportz/tap`.
+After publishing, the script updates the tap itself: it checks that the release is
+public and that `dist/VERSION/smpl-menubar.rb` has the right version and the
+SHA-256 of the published ZIP, clones the tap into a temporary directory, copies
+the cask to `Casks/smpl-menubar.rb`, runs `brew style`, then commits
+(`🍺 Update smpl.menubar to VERSION`) and pushes. It refuses to move the tap to an
+older version and does nothing if the tap is already current. If that step fails,
+fix the cause and retry it alone with `./scripts/publish.sh tap VERSION`.
+Your `gh` login is enough; no cross-repository token is needed. The public tap is
+`TechSupportz/homebrew-tap`; Homebrew names it `TechSupportz/tap`.
+
+For a deeper check afterwards (on Homebrew 6+, run
+`brew trust --cask TechSupportz/tap/smpl-menubar` first):
+`brew audit --cask --online TechSupportz/tap/smpl-menubar`.
 
 ## README Install snippet
 
