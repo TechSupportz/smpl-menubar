@@ -64,7 +64,8 @@ update_tap() {
   fi
   cp "$cask" "$tap/$CASK"
   if git -C "$tap" diff --quiet; then echo "Tap already on $VERSION"; return; fi
-  if command -v brew >/dev/null; then brew style --cask "$tap/$CASK"; fi
+  # By path: `--cask` only takes cask names, not files.
+  if command -v brew >/dev/null; then brew style "$tap/$CASK"; fi
   git -C "$tap" add "$CASK"
   git -C "$tap" commit --quiet -m "🍺 Update smpl.menubar to $VERSION"
   git -C "$tap" push --quiet origin HEAD
