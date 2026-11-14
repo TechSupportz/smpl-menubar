@@ -108,6 +108,12 @@ const description = "A tiny menu bar app for macOS that hides the icons you don'
         try {
           await navigator.clipboard.writeText(btn.dataset.cmd!);
           show("Copied");
+          void fetch("/events/brew-copy", {
+            method: "POST",
+            credentials: "omit",
+            keepalive: true,
+            referrerPolicy: "no-referrer",
+          }).catch(() => {});
         } catch {
           const range = document.createRange();
           range.selectNodeContents(btn.querySelector("code")!);

@@ -1,0 +1,114 @@
+---
+import "../styles/global.css";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Analytics · smpl.menubar</title>
+    <link rel="icon" href="/favicon.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <main>
+      <header><a class="brand" href="/"><img src="/favicon.png" width="28" height="28" alt="" />smpl.menubar</a><a href="/cdn-cgi/access/logout">Sign out</a></header>
+      <div class="heading"><h1>Website analytics</h1><div class="controls"><label for="range">Period</label><select id="range"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select><button id="refresh" type="button">Refresh</button></div></div>
+      <p id="status" role="status" aria-live="polite">Loading analytics…</p>
+      <div id="error" role="alert" hidden></div>
+      <section class="totals" aria-label="Action totals">
+        <div><h2>Download requests</h2><p id="downloads">—</p></div>
+        <div><h2>Homebrew command copies</h2><p id="copies">—</p></div>
+      </section>
+      <section aria-labelledby="daily-title"><div class="chart-heading"><h2 id="daily-title">Daily activity</h2><div class="legend"><span>▰ Downloads</span><span>▱ Command copies</span></div></div>
+        <div id="chart" aria-label="Daily action counts"></div>
+        <p id="empty" hidden>No actions recorded in this period.</p>
+        <details><summary>View daily counts</summary><div class="table-wrap"><table><thead><tr><th scope="col">Date (UTC)</th><th scope="col">Downloads</th><th scope="col">Command copies</th></tr></thead><tbody id="rows"></tbody></table></div></details>
+      </section>
+      <footer>Counts include repeat actions and may include bots. These are not unique users or confirmed installs. Dates use UTC; new events can take a little time to appear. Cloudflare sampling may affect estimates. The app stays offline.</footer>
+    </main>
+    <script>
+      const range = document.querySelector<HTMLSelectElement>("#range")!;
+      const refresh = document.querySelector<HTMLButtonElement>("#refresh")!;
+      const status = document.querySelector<HTMLElement>("#status")!;
+      const error = document.querySelector<HTMLElement>("#error")!;
+      const downloads = document.querySelector<HTMLElement>("#downloads")!;
+      const copies = document.querySelector<HTMLElement>("#copies")!;
+      const chart = document.querySelector<HTMLElement>("#chart")!;
+      const rows = document.querySelector<HTMLElement>("#rows")!;
+      const empty = document.querySelector<HTMLElement>("#empty")!;
+      const number = new Intl.NumberFormat();
+      let requestId = 0;
+      async function load() {
+        const id = ++requestId;
+        refresh.disabled = true;
+        error.hidden = true;
+        status.textContent = "Loading analytics…";
+        downloads.textContent = copies.textContent = "—";
+        chart.replaceChildren(); rows.replaceChildren(); empty.hidden = true;
+        try {
+          const response = await fetch(`/analytics/data?days=${range.value}`, { cache: "no-store" });
+          if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) throw new Error("Couldn’t load analytics. Refresh, or sign in again if your session expired.");
+          const data = await response.json();
+          if (id !== requestId) return;
+          downloads.textContent = number.format(data.totals.download);
+          copies.textContent = number.format(data.totals.brew_copy);
+          status.textContent = `Updated ${new Date(data.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${data.days} calendar days, including today`;
+          const max = Math.max(1, ...data.rows.flatMap((row: any) => [row.download, row.brew_copy]));
+          const width = 1000, height = 210, plot = 170, step = width / data.rows.length;
+          const bars = data.rows.map((row: any, i: number) => {
+            const x = i * step, w = Math.max(1, step * .32);
+            return `<g><title>${row.day}: ${row.download} downloads, ${row.brew_copy} command copies</title><rect x="${x + step * .12}" y="${plot - row.download / max * 150}" width="${w}" height="${row.download / max * 150}" fill="#327566"/><rect x="${x + step * .5}" y="${plot - row.brew_copy / max * 150}" width="${w}" height="${row.brew_copy / max * 150}" fill="#fff" stroke="#327566"/></g>`;
+          }).join("");
+          // Values come from the fixed, numeric API schema. Dates below use textContent.
+          const scale = document.createElement("span"); scale.textContent = `${number.format(max)} actions`; scale.className = "scale";
+          chart.append(scale);
+          chart.insertAdjacentHTML("beforeend", `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily downloads and Homebrew command copies"><path d="M0 ${plot}H1000" stroke="#d9dcdb"/>${bars}</svg>`);
+          const dates = document.createElement("div"); dates.className = "dates";
+          for (const day of [data.rows[0].day, data.rows.at(-1).day]) { const label = document.createElement("span"); label.textContent = day; dates.append(label); }
+          chart.append(dates);
+          for (const row of [...data.rows].reverse()) {
+            const tr = document.createElement("tr");
+            for (const value of [row.day, number.format(row.download), number.format(row.brew_copy)]) { const td = document.createElement("td"); td.textContent = value; tr.append(td); }
+            rows.append(tr);
+          }
+          empty.hidden = data.totals.download + data.totals.brew_copy !== 0;
+        } catch (cause) {
+          if (id !== requestId) return;
+          status.textContent = "Analytics unavailable";
+          error.textContent = cause instanceof Error ? cause.message : "Couldn’t load analytics.";
+          error.hidden = false;
+        } finally { if (id === requestId) refresh.disabled = false; }
+      }
+      range.addEventListener("change", load);
+      refresh.addEventListener("click", load);
+      load();
+    </script>
+  </body>
+</html>
+<style>
+  :global(body) { margin: 0; background: #f2f2f3; color: #202322; font: 15px/1.5 Archivo, system-ui, sans-serif; }
+  main { max-width: 1000px; margin: auto; padding: 24px 28px 40px; }
+  header,.heading,.controls,.chart-heading,.legend { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  header { margin-bottom: 48px; } a { color: inherit; } .brand { display:flex; align-items:center; gap:10px; font-weight:600; text-decoration:none; }
+  h1 { font-size:24px; font-weight:600; letter-spacing:-.03em; } h2 { font-size:15px; font-weight:500; margin:0; }
+  button,select { font:inherit; padding:8px 12px; border:1px solid #b8bebb; border-radius:6px; background:#fff; color:inherit; } button { cursor:pointer; } button:disabled { opacity:.5; cursor:wait; }
+  :is(a,button,select,summary):focus-visible { outline:2px solid #327566; outline-offset:4px; }
+  #status,footer,.dates { color:#595e5b; font-size:13px; } #error { background:#fbe9e6; padding:16px; margin:16px 0; }
+  .totals { display:grid; grid-template-columns:1fr 1fr; gap:28px; padding:28px 0 32px; }
+  .totals p { font-size:36px; line-height:1.2; font-weight:500; font-variant-numeric:tabular-nums; margin:10px 0 0; }
+  section[aria-labelledby] { background:white; border-radius:8px; padding:24px; } .legend { font-size:13px; color:#327566; gap:20px; }
+  #chart { margin-top:24px; } :global(#chart svg) { width:100%; display:block; } :global(.dates) { display:flex; justify-content:space-between; } :global(.scale) { font-size:13px; color:#595e5b; }
+  details { margin-top:24px; } summary { cursor:pointer; }
+  /* Rows and cells are created by the script, so Astro's scoped attribute never reaches them. Style the whole table globally. */
+  .table-wrap { margin-top:16px; max-height:440px; overflow:auto; border:1px solid #e3e6e4; border-radius:6px; }
+  :global(.table-wrap table) { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  :global(.table-wrap th), :global(.table-wrap td) { text-align:right; padding:10px 16px; white-space:nowrap; border-bottom:1px solid #e3e6e4; }
+  :global(.table-wrap th:first-child), :global(.table-wrap td:first-child) { text-align:left; }
+  :global(.table-wrap th) { position:sticky; top:0; background:#fff; font-weight:500; color:#595e5b; font-size:13px; }
+  :global(.table-wrap tbody tr:last-child td) { border-bottom:0; }
+  :global(.table-wrap tbody tr:hover td) { background:#f7f8f7; }
+  footer { margin-top:24px; max-width:75ch; }
+  @media(max-width:600px) { main { padding:20px 16px; } header { margin-bottom:32px; } .heading { align-items:flex-start; flex-direction:column; gap:12px; } .controls { gap:10px; flex-wrap:wrap; } .totals { gap:16px; } .totals h2 { min-height:45px; } section[aria-labelledby] { padding:16px; } .chart-heading { align-items:flex-start; flex-direction:column; gap:8px; } :global(.table-wrap th), :global(.table-wrap td) { padding:10px 8px; } :global(.table-wrap th:first-child), :global(.table-wrap td:first-child) { padding-left:12px; } :global(.table-wrap th:last-child), :global(.table-wrap td:last-child) { padding-right:12px; } }
+</style>

@@ -6,7 +6,26 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/download"]
+    "run_worker_first": [
+      "/download",
+      "/events/brew-copy",
+      "/analytics",
+      "/analytics/*"
+    ]
   },
-  "routes": [{ "pattern": "smpl-menubar.tnitish.com", "custom_domain": true }]
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS",
+      "dataset": "smpl_menubar_actions"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "smpl-menubar.tnitish.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "ACCESS_AUD": "e8c5010889c9508c8e94cde4619b2e0ff89a54df690e791b43efdf86682d9aab"
+  }
 }
