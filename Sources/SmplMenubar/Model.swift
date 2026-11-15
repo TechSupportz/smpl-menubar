@@ -199,7 +199,36 @@ final class Model {
     /// switch really changes, so macOS redraws each item, even one stuck on screen while its saved
     /// switch already says off. Hidden, Buried and Disabled apps flash briefly as a result.
     /// Apps switched off in System Settings aren't touched.
+    ///
+    /// First restarts MenuBarAgent: after running a while it can stop acting on switch changes,
+    /// leaving items off screen though their switches say on. The rebuild waits for the new
+    /// agent, which re-reads the switches and positions as it starts and could undo it otherwise.
     func resync() {
+        let agents = NSRunningApplication.runningApplications(withBundleIdentifier: Self.menuBarAgentID)
+        guard !agents.isEmpty else { return rebuild() }
+        let old = Set(agents.map(\.processIdentifier))
+        for pid in old { kill(pid, SIGTERM) }
+        waitForMenuBarAgent(replacing: old, tries: 25)
+    }
+
+    private static let menuBarAgentID = "com.apple.MenuBarAgent"
+
+    /// Polls until launchd has started a new MenuBarAgent, gives it a moment to settle, then
+    /// rebuilds. Rebuilds anyway after about 5 seconds.
+    private func waitForMenuBarAgent(replacing old: Set<pid_t>, tries: Int) {
+        let restarted = NSRunningApplication.runningApplications(withBundleIdentifier: Self.menuBarAgentID)
+            .contains { !old.contains($0.processIdentifier) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (restarted ? 0.6 : 0.2)) { [weak self] in
+            guard let self else { return }
+            if restarted || tries <= 0 {
+                self.rebuild()
+            } else {
+                self.waitForMenuBarAgent(replacing: old, tries: tries - 1)
+            }
+        }
+    }
+
+    private func rebuild() {
         refresh()
         guard !accessError else { return }
         _ = MenuBarLayout.reorderRightOfDot(ownID: ownID, dividerName: Self.dividerName, ranks: ownerRanks(.visible))
