@@ -5,15 +5,48 @@ cd "$(dirname "$0")/.."
 REPO=TechSupportz/smpl-menubar
 fail() { echo "Error: $*" >&2; exit 1; }
 usage() {
-  echo 'Usage: scripts/publish.sh draft VERSION [BUILD_NUMBER]'
+  echo 'Usage: scripts/publish.sh bump [VERSION]'
+  echo '       scripts/publish.sh draft VERSION [BUILD_NUMBER]'
   echo '       scripts/publish.sh publish VERSION'
+  echo 'bump checks the latest GitHub release and sets Resources/Info.plist to VERSION (default: next patch).'
   echo 'draft builds/notarizes, then creates a GitHub draft at the pushed HEAD.'
   echo 'publish verifies that draft and makes it public; GitHub Actions then updates the tap.'
 }
 [[ ${1:-} != --help && ${1:-} != -h ]] || { usage; exit 0; }
+REPO_PLIST=Resources/Info.plist
+latest_release() {
+  # Highest published stable X.Y.Z release (no drafts or prereleases); empty if there is none yet.
+  # The API call must succeed: an auth or network failure must not look like "no releases".
+  local tags
+  tags=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+    --jq '.[] | select((.draft | not) and (.prerelease | not)) | .tag_name') || return 1
+  python3 -c '
+import re, sys
+vs = [tuple(map(int, m.groups())) for t in sys.argv[1].split()
+      if (m := re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", t))]
+print(".".join(map(str, max(vs))) if vs else "")' "$tags"
+}
+newer() { python3 -c 'import sys; a, b = (tuple(map(int, v.split("."))) for v in sys.argv[1:]); sys.exit(a <= b)' "$1" "$2"; }
+if [[ ${1:-} == bump ]]; then
+  [[ $# -le 2 ]] || { usage >&2; exit 1; }
+  gh auth status --hostname github.com >/dev/null
+  LATEST=$(latest_release)
+  if [[ -n ${2:-} ]]; then
+    VERSION=$2
+  else
+    [[ -n "$LATEST" ]] || fail 'No releases yet; pass a VERSION'
+    VERSION=$(python3 -c 'import sys; a, b, c = sys.argv[1].split("."); print(f"{a}.{b}.{int(c) + 1}")' "$LATEST")
+  fi
+  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Use a numeric X.Y.Z version'
+  [[ -z "$LATEST" ]] || newer "$VERSION" "$LATEST" || fail "$VERSION is not newer than the latest release, $LATEST"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$REPO_PLIST"
+  echo "Set $REPO_PLIST to $VERSION (latest release: ${LATEST:-none})."
+  echo "Commit and push it, then: scripts/publish.sh draft $VERSION"
+  exit 0
+fi
 [[ $# -ge 2 && $# -le 3 ]] || { usage >&2; exit 1; }
 MODE=$1 VERSION=$2 BUILD=${3:-1}
-[[ "$MODE" == draft || "$MODE" == publish ]] || fail 'Choose draft or publish'
+[[ "$MODE" == draft || "$MODE" == publish ]] || fail 'Choose bump, draft or publish'
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Use a numeric X.Y.Z version'
 [[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || fail 'Build number must be positive'
 [[ "$MODE" != publish || $# -eq 2 ]] || fail 'publish takes no build number'
@@ -43,6 +76,10 @@ verify_bundle() {
 }
 if [[ "$MODE" == draft ]]; then
   [[ -z $(git status --porcelain --untracked-files=normal) ]] || fail 'Commit intended changes first; checkout must be clean'
+  PLIST_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$REPO_PLIST")
+  [[ "$PLIST_VERSION" == "$VERSION" ]] || fail "$REPO_PLIST says $PLIST_VERSION; run scripts/publish.sh bump $VERSION, then commit and push"
+  LATEST=$(latest_release)
+  [[ -z "$LATEST" ]] || newer "$VERSION" "$LATEST" || fail "$VERSION is not newer than the latest release, $LATEST"
   : "${SIGN_ID:?Set SIGN_ID to your full Developer ID Application identity}"
   export SIGN_ID
   export NOTARY_PROFILE=${NOTARY_PROFILE:-smpl-notary}

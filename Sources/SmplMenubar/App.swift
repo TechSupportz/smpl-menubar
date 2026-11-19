@@ -26,7 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Set by click-to-hide, so hover doesn't reveal again until the pointer has left the bar.
     private var hoverSuppressed = false
     private static let revealDwell: TimeInterval = 0.25
-    private static let hideDelay: TimeInterval = 2
+    /// How long revealed items stay after the pointer leaves the bar; set in Arrange.
+    private static var hideDelay: TimeInterval {
+        let value = UserDefaults.standard.double(forKey: HideDelay.key)
+        return value > 0 ? value : HideDelay.default
+    }
 
     func applicationDidFinishLaunching(_: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -82,15 +86,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: Hover → Hidden section
 
-    /// Resting on the menu bar reveals Hidden; it goes 2 seconds after the pointer leaves the bar.
+    /// Resting on the menu bar reveals Hidden. Whatever's revealed, by hover or click, goes
+    /// `hideDelay` after the pointer leaves the bar and no menu from a revealed item is open.
     private func tickHover() {
-        let onBar = Self.pointerIsOnMenuBar(revealed: model.hoverShown)
+        let onBar = Self.pointerIsOnMenuBar(revealed: model.isShowing)
         if !onBar {
             hoverSuppressed = false
             enteredBarAt = nil
         }
 
-        if onBar, !model.hoverShown, !hoverSuppressed {
+        // A click reveal already includes Hidden, so there's nothing to check while it's up.
+        if onBar, !model.isShowing, !hoverSuppressed, model.hasHidden {
             if let entered = enteredBarAt {
                 if Date().timeIntervalSince(entered) >= Self.revealDwell {
                     enteredBarAt = nil
@@ -100,18 +106,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } else {
                 enteredBarAt = Date()
             }
+        } else {
+            // The dwell only counts while a reveal could happen the whole time.
+            enteredBarAt = nil
         }
-        guard model.hoverShown else { return }
-        if onBar {
+        guard model.isShowing else {
+            leftBarAt = nil
+            return
+        }
+        if onBar || revealedMenuIsOpen() {
             leftBarAt = nil
         } else if let left = leftBarAt {
             if Date().timeIntervalSince(left) >= Self.hideDelay {
                 leftBarAt = nil
-                model.setShown(hover: false, click: model.clickShown)
+                model.setShown(hover: false, click: false)
                 updateIcon()
             }
         } else {
             leftBarAt = Date()
+        }
+    }
+
+    /// Whether a revealed app has a menu, popover or panel open: one of its windows above normal
+    /// level hanging from the menu bar, apart from its menu bar items themselves. Floating panels
+    /// elsewhere on screen don't count, so they can't hold a reveal open.
+    private func revealedMenuIsOpen() -> Bool {
+        let owners = model.revealedOwners
+        guard !owners.isEmpty else { return false }
+        let pids = Set(NSWorkspace.shared.runningApplications
+            .filter { $0.bundleIdentifier.map(owners.contains) ?? false }
+            .map(\.processIdentifier))
+        guard !pids.isEmpty,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+              as? [[String: Any]] else { return false }
+        // Each screen's bar in window-list coordinates (origin at the top left of the main screen).
+        let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
+        let bars = NSScreen.screens.map { screen in
+            let height = max(screen.frame.maxY - screen.visibleFrame.maxY, screen.safeAreaInsets.top, NSStatusBar.system.thickness)
+            return CGRect(x: screen.frame.minX, y: mainTop - screen.frame.maxY, width: screen.frame.width, height: height)
+        }
+        let statusLevel = Int(CGWindowLevelForKey(.statusWindow))
+        return windows.contains { window in
+            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, pids.contains(pid),
+                  let layer = window[kCGWindowLayer as String] as? Int, layer > 0,
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds)
+            else { return false }
+            return bars.contains { bar in
+                // Its top edge is at or just below the bar (a popover's arrow leaves a gap), and it
+                // reaches down past the bar. The top can sit above the screen: Dropover's popover
+                // starts 35 pt above it. Overlap, not midpoint: a menu can straddle two displays.
+                guard rect.maxX > bar.minX, rect.minX < bar.maxX,
+                      rect.minY <= bar.maxY + 16, rect.maxY > bar.maxY else { return false }
+                // A menu bar item itself: status level and no taller than the bar.
+                return !(layer == statusLevel && rect.height <= bar.height + 2)
+            }
         }
     }
 

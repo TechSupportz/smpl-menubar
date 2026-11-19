@@ -12,7 +12,7 @@ smpl.menubar adds a small dot to your menu bar. Everything left of it is tucked 
 
 - **Visible** apps stay in the menu bar like normal.
 - **Hidden** apps show up when you rest your pointer on the menu bar, then go away a couple of seconds after you leave.
-- **Buried** apps only show up when you click the dot. Click it again to put them back.
+- **Buried** apps only show up when you click the dot. Click it again to put them back, or move away: they go a couple of seconds after you leave the menu bar and close their menus. Change how long they stay with **Hide items after** in Arrange.
 - **Disabled** apps never show up.
 
 To sort your apps, open smpl.menubar again from Spotlight or right-click the dot and choose **Arrange…**, then drag apps between the four sections.

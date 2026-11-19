@@ -55,6 +55,26 @@ final class Model {
     /// Everything revealed by clicking the dot.
     private(set) var clickShown = false
     var isShowing: Bool { hoverShown || clickShown }
+    /// Whether hovering has anything to reveal: a Hidden app whose menu bar item is running.
+    /// Without one, the dot stays put on hover.
+    var hasHidden: Bool {
+        let hidden = sections.keys.filter { $0 != ownID && section(of: $0) == .hidden }
+        guard !hidden.isEmpty else { return false }
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        return hidden.contains { !(itemOwners[$0] ?? [$0]).isDisjoint(with: running) }
+    }
+
+    /// Bundle IDs owning the items on screen only because of a reveal (Hidden on hover or click, Buried on click).
+    var revealedOwners: Set<String> {
+        var owners = Set<String>()
+        for id in sections.keys where id != ownID {
+            let section = section(of: id)
+            if section == .hidden && isShowing || section == .buried && clickShown {
+                owners.formUnion(itemOwners[id] ?? [id])
+            }
+        }
+        return owners
+    }
 
     /// Sets both flags together and writes the switches at most once, and only when
     /// what's on screen changes: every write makes macOS rebuild the affected items.

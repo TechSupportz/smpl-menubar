@@ -6,6 +6,14 @@ struct ArrangeView: View {
     let model: Model
 
     var body: some View {
+        VStack(spacing: 0) {
+            main
+            Footer()
+        }
+        .frame(minWidth: 920, minHeight: 460)
+    }
+
+    private var main: some View {
         VStack(alignment: .leading, spacing: 16) {
             Header(model: model)
 
@@ -19,11 +27,8 @@ struct ArrangeView: View {
                     SectionCard(section: section, model: model)
                 }
             }
-
-            Footer()
         }
         .padding(20)
-        .frame(minWidth: 920, minHeight: 460)
         .animation(.smooth(duration: 0.3), value: model.accessError)
     }
 }
@@ -185,32 +190,165 @@ private extension View {
     }
 }
 
+/// A full-width strip under the sections: settings on the left, credits on the right.
 private struct Footer: View {
     @State private var launchAtLogin = LoginItem.isOn
     @State private var needsApproval = LoginItem.needsApproval
 
     var body: some View {
-        HStack {
-            Toggle("Launch at Login", isOn: Binding(
-                get: { launchAtLogin || needsApproval },
-                set: { on in
-                    LoginItem.set(on)
-                    launchAtLogin = LoginItem.isOn
-                    needsApproval = LoginItem.needsApproval
-                }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            if needsApproval {
-                Button("Approve in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
-                    .buttonStyle(.link)
-                    .font(.caption)
-            }
-            Spacer()
-            Link("built by nitish", destination: URL(string: "https://github.com/TechSupportz/smpl-menubar")!)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 0) {
+            settings
+            Spacer(minLength: 16)
+            credits
         }
-        .padding(.horizontal, 4)
+        .frame(height: 44)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        // A step darker than the window, so it reads as secondary to the sections above.
+        .background(Color(nsColor: .underPageBackgroundColor))
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    @ViewBuilder private var settings: some View {
+            SettingCard(symbol: "power", title: "Launch at Login") {
+                // Only when macOS needs you to approve it.
+                if needsApproval {
+                    Button("Approve in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+                        .buttonStyle(.link)
+                }
+            } control: {
+                Toggle("Launch at Login", isOn: Binding(
+                    get: { launchAtLogin || needsApproval },
+                    set: { on in
+                        LoginItem.set(on)
+                        launchAtLogin = LoginItem.isOn
+                        needsApproval = LoginItem.needsApproval
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+
+            Divider().padding(.vertical, 10)
+
+            SettingCard(symbol: "timer", title: "Hide items after", info: AnyView(HideInfo())) {
+                EmptyView()
+            } control: {
+                HideDelayPicker()
+            }
+
+    }
+
+    private var credits: some View {
+            VStack(alignment: .trailing, spacing: 2) {
+                Link("built by nitish", destination: URL(string: "https://github.com/TechSupportz/smpl-menubar")!)
+                    .foregroundStyle(.secondary)
+                Text(appVersion)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .padding(.trailing, 4)
+    }
+}
+
+/// One setting: icon, title and an optional caption on the left, its control on the right.
+private struct SettingCard<Caption: View, Control: View>: View {
+    let symbol: String
+    let title: String
+    var info: AnyView?
+    @ViewBuilder let caption: Caption
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                // Baseline-aligned, so the (i) sits level with the title's letters.
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(title).font(.body.weight(.medium)).fixedSize()
+                    info
+                }
+                caption
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            Spacer(minLength: 8)
+            control
+        }
+        .padding(.horizontal, 16)
+        // At least this wide so the two settings line up; wider if the title needs it.
+        .frame(minWidth: 240)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+private var appVersion: String {
+    "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
+}
+
+/// Choices for how long revealed items stay after the pointer leaves the menu bar.
+enum HideDelay {
+    static let key = "hideDelay"
+    static let `default`: TimeInterval = 2
+    static let choices: [TimeInterval] = [1, 2, 3, 5, 10]
+}
+
+private struct HideDelayPicker: View {
+    @AppStorage(HideDelay.key) private var delay = HideDelay.default
+
+    var body: some View {
+        Picker("Hide items after", selection: $delay) {
+            ForEach(HideDelay.choices, id: \.self) { Text("\(Int($0)) s").tag($0) }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .controlSize(.small)
+        .fixedSize()
+        .help("How long revealed apps stay after you leave the menu bar")
+    }
+}
+
+/// The (i) beside Hide items after: when revealed apps hide.
+private struct HideInfo: View {
+    @State private var isShown = false
+
+    var body: some View {
+        Button { isShown.toggle() } label: {
+            Image(systemName: "info.circle")
+                .font(.body)
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("When revealed apps hide")
+        .popover(isPresented: $isShown, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("When apps hide").font(.headline)
+                rule("menubar.rectangle", "Apps you've revealed stay while your pointer is on the menu bar or one of their menus is open.")
+                rule("timer", "Once you leave the bar and close their menus, they hide after this time.")
+                rule("circle.fill", "If you clicked the dot to show them, clicking it again hides them straight away.")
+            }
+            .padding(16)
+            .frame(width: 320, alignment: .leading)
+            // The settings row it's anchored in keeps titles to one line; the popover inherits that.
+            .lineLimit(nil)
+        }
+    }
+
+    private func rule(_ symbol: String, _ text: LocalizedStringKey) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
