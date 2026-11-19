@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private let model = Model()
     private var statusItem: NSStatusItem!
-    /// Thin line between Hidden and Buried, shown only while Buried is.
+    /// Thin line between Hidden and Buried, shown only while Buried is and Hidden has items.
     private var divider: NSStatusItem!
     private var window: NSWindow?
     private var hoverTimer: Timer?
@@ -198,7 +198,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func updateIcon() {
         statusItem.button?.image = Self.dot(filled: !model.isShowing)
-        divider.isVisible = model.clickShown
+        // It separates Hidden from Buried, so with no Hidden items it would just sit beside the dot.
+        divider.isVisible = model.clickShown && model.hasHidden
     }
 
     private static func dividerImage() -> NSImage {
