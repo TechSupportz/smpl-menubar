@@ -39,7 +39,15 @@ if [[ ${1:-} == bump ]]; then
   fi
   [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Use a numeric X.Y.Z version'
   [[ -z "$LATEST" ]] || newer "$VERSION" "$LATEST" || fail "$VERSION is not newer than the latest release, $LATEST"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$REPO_PLIST"
+  # Edits just the value in place; PlistBuddy would rewrite and reorder the whole file.
+  python3 - "$REPO_PLIST" "$VERSION" <<'PY'
+import re, sys
+path, version = sys.argv[1:]
+text = open(path).read()
+new, n = re.subn(r'(<key>CFBundleShortVersionString</key>\s*<string>)[^<]*(</string>)', rf'\g<1>{version}\g<2>', text)
+if n != 1: sys.exit('CFBundleShortVersionString not found in ' + path)
+open(path, 'w').write(new)
+PY
   echo "Set $REPO_PLIST to $VERSION (latest release: ${LATEST:-none})."
   echo "Commit and push it, then: scripts/publish.sh draft $VERSION"
   exit 0
