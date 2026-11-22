@@ -42,6 +42,8 @@ struct MenuApp: Identifiable, Hashable {
 @Observable
 final class Model {
     private(set) var apps: [MenuApp] = []
+    /// System items not in Arrange because they're switched off in System Settings.
+    private(set) var addableModules: [MenuApp] = []
     /// Apps switched off in System Settings, not by this app. They show under Disabled
     /// and are left alone until dragged somewhere else.
     private var offElsewhere: Set<String> = []
@@ -61,7 +63,9 @@ final class Model {
         let hidden = sections.keys.filter { $0 != ownID && section(of: $0) == .hidden }
         guard !hidden.isEmpty else { return false }
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-        return hidden.contains { !(itemOwners[$0] ?? [$0]).isDisjoint(with: running) }
+        return hidden.contains {
+            ControlCenterModules.isModule($0) || !(itemOwners[$0] ?? [$0]).isDisjoint(with: running)
+        }
     }
 
     /// Bundle IDs owning the items on screen only because of a reveal (Hidden on hover or click, Buried on click).
@@ -70,7 +74,8 @@ final class Model {
         for id in sections.keys where id != ownID {
             let section = section(of: id)
             if section == .hidden && isShowing || section == .buried && clickShown {
-                owners.formUnion(itemOwners[id] ?? [id])
+                // A module's menus belong to Control Center.
+                owners.formUnion(ControlCenterModules.isModule(id) ? [Self.controlCenterID] : itemOwners[id] ?? [id])
             }
         }
         return owners
@@ -101,6 +106,7 @@ final class Model {
 
     private let ownID = Bundle.main.bundleIdentifier ?? ""
     static let dividerName = "Divider"
+    private static let controlCenterID = "com.apple.controlcenter"
     /// App bundle ID → bundle IDs that own its menu bar items.
     private var itemOwners: [String: Set<String>] = [:]
     /// The switches from the last confirmed write.
@@ -148,7 +154,10 @@ final class Model {
 
     /// Moves an app into a section, placed before `target` (an app in that section) or at its end.
     func move(_ id: String, to section: Section, before target: String? = nil) {
-        guard id != target else { return }
+        // Only rows listed here; drops can also carry plain text from other apps.
+        guard id != target, apps.contains(where: { $0.id == id }) else { return }
+        // A system item has no use in Disabled: it's simply taken out of the menu bar.
+        if section == .disabled, ControlCenterModules.isModule(id) { return removeModule(id) }
         let oldSection = self.section(of: id)
         // Dragging an app switched off elsewhere out of Disabled hands it to this app.
         let adopting = offElsewhere.contains(id) && section != .disabled
@@ -182,6 +191,37 @@ final class Model {
             if reseat { self.reseat(section) } else { self.apply() }
             self.refresh()
         }
+    }
+
+    /// Switches on a system item that's off in System Settings and lists it at the end of Visible.
+    /// It counts as ours until the write confirms, so a failed write is retried.
+    func addModule(_ id: String) {
+        guard ControlCenterModules.isModule(id) else { return }
+        managed.insert(id)
+        // The full order as Arrange shows it, so the new row and its menu bar slot agree.
+        let shown = Section.allCases.flatMap { apps(in: $0).map(\.id) }
+        order = (order.filter { !shown.contains($0) } + shown).filter { $0 != id } + [id]
+        sections[id] = .visible
+        lastWritten = nil
+        // Listed first, so the layout ranks it where its row is.
+        refresh()
+        apply()
+        refresh()
+    }
+
+    /// Switches a system item off, as System Settings' "Don't Show" does, and takes it out of
+    /// Arrange; it goes back to the Add System Item menu.
+    func removeModule(_ id: String) {
+        guard ControlCenterModules.isModule(id), apps.contains(where: { $0.id == id }) else { return }
+        guard ControlCenterModules.setShown([id: false]) else {
+            accessError = true
+            return
+        }
+        sections.removeValue(forKey: id)
+        managed.remove(id)
+        order.removeAll { $0 == id }
+        lastWritten = nil
+        refresh()
     }
 
     /// Owner bundle ID → the app's place in its section, for the menu bar layout.
@@ -276,7 +316,7 @@ final class Model {
         // Apps switched off count as ours meanwhile, so quitting restores them.
         managed.formUnion(changes.filter { !$0.value }.keys)
         lastWritten = nil
-        if !ControlCenterList.setAllowed(changes) {
+        if !Self.setSwitches(changes) {
             accessError = true
             writePending = true
         }
@@ -322,7 +362,18 @@ final class Model {
             guard isRunning || section != .visible else { continue }
             listed.append(makeApp(entry.bundleID))
         }
+        // System items. One switched off in System Settings is left out, unless this app switched it off.
+        var addable: [MenuApp] = []
+        for (id, shown) in ControlCenterModules.read() {
+            itemOwners[id] = [id]
+            if shown || managed.contains(id) || (sections[id] ?? .visible) != .visible {
+                listed.append(makeApp(id))
+            } else {
+                addable.append(makeApp(id))
+            }
+        }
         let byName: (MenuApp, MenuApp) -> Bool = { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        addableModules = addable.sorted(by: byName)
         offElsewhere = elsewhere
         apps = listed.sorted(by: byName)
     }
@@ -353,7 +404,15 @@ final class Model {
     /// and a crash before this leaves enough to recover.
     func restoreForQuit() {
         let changes = Dictionary(uniqueKeysWithValues: managed.filter { sections[$0] != .disabled }.map { ($0, true) })
-        accessError = !ControlCenterList.setAllowed(changes)
+        accessError = !Self.setSwitches(changes)
+    }
+
+    /// Writes app switches and module switches, each to its own place.
+    private static func setSwitches(_ changes: [String: Bool]) -> Bool {
+        let modules = changes.filter { ControlCenterModules.isModule($0.key) }
+        let apps = changes.filter { !ControlCenterModules.isModule($0.key) }
+        let appsOK = ControlCenterList.setAllowed(apps)
+        return ControlCenterModules.setShown(modules) && appsOK
     }
 
     private func write(_ changes: [String: Bool]) {
@@ -362,7 +421,18 @@ final class Model {
         // Order only matters when items reappear: Hidden, then Buried, left of the dot.
         // macOS only reads the order when an item appears, so a pure hide skips it.
         if changes.values.contains(true) { placeLeftOfDot() }
-        let ok = ControlCenterList.setAllowed(changes)
+        // An item in Visible can be saved left of the dot (from when it was hidden), so Visible is
+        // put in order first and anything coming back lands right of the dot. This also runs on
+        // launch, when nothing may be switching on. Visible items already on screen whose slot
+        // changed only move once they reappear, so they're cycled after.
+        let moved = MenuBarLayout.reorderRightOfDot(ownID: ownID, dividerName: Self.dividerName, ranks: ownerRanks(.visible))
+        let reseatVisible = apps(in: .visible).map(\.id)
+            .filter { changes[$0] != true && !(itemOwners[$0] ?? [$0]).isDisjoint(with: moved) }
+        // Anything being switched off counts as ours before the write, so a write that only partly
+        // lands still has it switched back on at quit.
+        let switchingOff = changes.filter { !$0.value }.keys
+        if !managed.isSuperset(of: switchingOff) { managed.formUnion(switchingOff) }
+        let ok = Self.setSwitches(changes)
         accessError = !ok
         writePending = !ok
         // Only after a confirmed write: switched off → ours; restored in Visible → no longer ours.
@@ -377,6 +447,7 @@ final class Model {
             }
         }
         if updated != managed { managed = updated }
+        cycle(reseatVisible)
     }
 
     /// Names and icons don't change while running; looking them up on every refresh is slow.
@@ -384,7 +455,7 @@ final class Model {
 
     private func makeApp(_ id: String) -> MenuApp {
         if let cached = appCache[id] { return cached }
-        let app = Self.lookUpApp(id)
+        let app = ControlCenterModules.isModule(id) ? ControlCenterModules.makeApp(id) : Self.lookUpApp(id)
         appCache[id] = app
         return app
     }

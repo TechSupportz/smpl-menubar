@@ -11,7 +11,9 @@ enum MenuBarLayout {
 
     /// Lays out, right to left: everything already right of the dot, the dot, Hidden, Buried,
     /// then whatever else was left of the dot. Items right of the dot are never touched.
-    /// Ranks map an owner bundle ID to its place in Arrange (0 = leftmost); an owner's own items keep their order.
+    /// Ranks map an owner bundle ID to its place in Arrange (0 = top). Menu bars read right to left
+    /// from the clock, so the top of a section sits nearest the dot (or the divider, for Buried).
+    /// An owner's own items keep their order.
     /// The divider (our second item) goes between Hidden and Buried.
     /// Reads back after writing; if MenuBarAgent replaced the table in between, lays out the fresh copy once more.
     /// Returns the owners whose items it moved.
@@ -43,10 +45,10 @@ enum MenuBarLayout {
             keys.sorted { (position(table[$0]) ?? 0, $0) < (position(table[$1]) ?? 0, $1) }
         }
         let keys = table.keys.filter { $0 != dotKey && $0 != dividerKey }
-        // Written right to left from the dot, so the last in Arrange comes first.
+        // Written right to left from the dot, so the top of Arrange comes first.
         func ranked(_ ranks: [String: Int]) -> [String] {
             keys.compactMap { key in owner(of: key).flatMap { ranks[$0] }.map { (key, $0) } }
-                .sorted { ($1.1, position(table[$0.0]) ?? 0, $0.0) < ($0.1, position(table[$1.0]) ?? 0, $1.0) }
+                .sorted { ($0.1, position(table[$0.0]) ?? 0, $0.0) < ($1.1, position(table[$1.0]) ?? 0, $1.0) }
                 .map(\.0)
         }
         let hidden = ranked(hiddenRanks)
@@ -68,7 +70,9 @@ enum MenuBarLayout {
         return written
     }
 
-    /// Reorders items right of the dot to follow `ranks`, reusing the slots they already hold.
+    /// Reorders the items `ranks` lists to follow it right of the dot, the top of Arrange rightmost,
+    /// reusing the slots they already hold. One saved left of the dot (say, from before it was hidden)
+    /// gets a free slot just right of it first, or it would come back on the wrong side.
     /// Returns the owners whose items moved; they only land there once they reappear.
     static func reorderRightOfDot(ownID: String, dividerName: String, ranks: [String: Int]) -> Set<String> {
         CFPreferencesAppSynchronize(domain)
@@ -78,15 +82,25 @@ enum MenuBarLayout {
               let dot = position(table[dotKey])
         else { return [] }
         let items = table.keys.compactMap { key -> (key: String, rank: Int, pos: Int)? in
-            guard let rank = owner(of: key).flatMap({ ranks[$0] }),
-                  let pos = position(table[key]), pos < dot else { return nil }
+            guard key != dotKey, key != dividerKey, let rank = owner(of: key).flatMap({ ranks[$0] }),
+                  let pos = position(table[key]) else { return nil }
             return (key, rank, pos)
         }
-        // Leftmost in Arrange takes the highest slot.
-        let slots = items.map(\.pos).sorted(by: >)
-        let ordered = items.sorted { ($0.rank, -$0.pos, $0.key) < ($1.rank, -$1.pos, $1.key) }
+        // Distinct slots right of the dot; items at or left of it, or sharing a slot, get free ones
+        // just right of the dot.
+        var slots = Set(items.map(\.pos).filter { $0 < dot })
+        var taken = Set(table.values.compactMap(position))
+        var free = dot - 1
+        while slots.count < items.count {
+            while taken.contains(free) { free -= 1 }
+            slots.insert(free)
+            taken.insert(free)
+        }
+        // The top of Arrange takes the lowest slot, rightmost; an owner's own items keep their order.
+        let sortedSlots = slots.sorted()
+        let ordered = items.sorted { ($0.rank, $0.pos, $0.key) < ($1.rank, $1.pos, $1.key) }
         var moved = Set<String>()
-        for (item, slot) in zip(ordered, slots) where item.pos != slot {
+        for (item, slot) in zip(ordered, sortedSlots) where item.pos != slot {
             table[item.key] = slot
             if let owner = owner(of: item.key) { moved.insert(owner) }
         }
@@ -96,7 +110,9 @@ enum MenuBarLayout {
         return moved
     }
 
+    /// An app item's owner bundle ID, or a Control Center module's own key (`module:<name>`).
     private static func owner(of key: String) -> String? {
+        if ControlCenterModules.isModule(key) { return key }
         guard key.hasPrefix("status:"), let sep = key.range(of: "::") else { return nil }
         return String(key[key.index(key.startIndex, offsetBy: 7) ..< sep.lowerBound])
     }

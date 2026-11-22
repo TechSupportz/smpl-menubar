@@ -1,7 +1,8 @@
 import ServiceManagement
 import SwiftUI
 
-/// Columns run from most to least visible. Top to bottom in a column is left to right in the bar.
+/// Columns run from most to least visible. Top to bottom in a column is right to left in the bar,
+/// read outward from the clock, the dot or the divider.
 struct ArrangeView: View {
     let model: Model
 
@@ -30,6 +31,12 @@ struct ArrangeView: View {
         }
         .padding(20)
         .animation(.smooth(duration: 0.3), value: model.accessError)
+        // Dropping a system item outside every section takes it out of the menu bar.
+        .contentShape(.rect)
+        .onDrop(of: [.text], delegate: MoveDrop { ids in
+            let modules = ids.filter(ControlCenterModules.isModule)
+            withAnimation(.smooth(duration: 0.3)) { modules.forEach(model.removeModule) }
+        })
     }
 }
 
@@ -54,9 +61,29 @@ private struct Header: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            Button("Refresh Menu Bar", systemImage: "arrow.clockwise") { model.resync() }
+            VStack(spacing: 6) {
+                Menu {
+                    ForEach(model.addableModules) { module in
+                        Button {
+                            model.addModule(module.id)
+                        } label: {
+                            Label { Text(module.name) } icon: { Image(nsImage: ControlCenterModules.menuIcon(module)) }
+                        }
+                    }
+                } label: {
+                    Label("Add System Item", systemImage: "plus")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .help("Show a system item, like Sound or Bluetooth, in the menu bar")
+                .disabled(model.addableModules.isEmpty || model.accessError)
+                Button { model.resync() } label: {
+                    Label("Refresh Menu Bar", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 .help("Put every app back where Arrange says, in order")
                 .disabled(model.accessError)
+            }
+            .fixedSize()
         }
     }
 }
@@ -101,12 +128,35 @@ private struct SectionCard: View {
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .groupBox(highlighted: isTargeted)
-        .dropDestination(for: String.self) { ids, _ in
+        .onDrop(of: [.text], delegate: MoveDrop(onTargeted: { isTargeted = $0 }) { ids in
             withAnimation(.smooth(duration: 0.3)) {
                 ids.forEach { model.move($0, to: section) }
             }
-            return true
-        } isTargeted: { isTargeted = $0 }
+        })
+    }
+}
+
+/// A drop of dragged app IDs that reports itself as a move, so the cursor shows no "+" copy badge
+/// (`dropDestination` always reports a copy). Rows drag their app ID as plain text.
+private struct MoveDrop: DropDelegate {
+    var onTargeted: (Bool) -> Void = { _ in }
+    let perform: ([String]) -> Void
+
+    func dropUpdated(info _: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func dropEntered(info _: DropInfo) { onTargeted(true) }
+    func dropExited(info _: DropInfo) { onTargeted(false) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onTargeted(false)
+        let providers = info.itemProviders(for: [.text])
+        guard !providers.isEmpty else { return false }
+        for provider in providers {
+            _ = provider.loadTransferable(type: String.self) { result in
+                guard case let .success(id) = result else { return }
+                DispatchQueue.main.async { perform([id]) }
+            }
+        }
+        return true
     }
 }
 
@@ -118,7 +168,9 @@ private struct ReorderableRow: View {
     @State private var isTargeted = false
 
     var body: some View {
-        AppRow(app: app)
+        AppRow(app: app, onRemove: ControlCenterModules.isModule(app.id) ? {
+            withAnimation(.smooth(duration: 0.3)) { model.removeModule(app.id) }
+        } : nil)
             .draggable(app.id) {
                 AppRow(app: app).frame(width: 200)
             }
@@ -131,17 +183,18 @@ private struct ReorderableRow: View {
                     .opacity(isTargeted ? 1 : 0)
             }
             .animation(.easeOut(duration: 0.12), value: isTargeted)
-            .dropDestination(for: String.self) { ids, _ in
+            .onDrop(of: [.text], delegate: MoveDrop(onTargeted: { isTargeted = $0 }) { ids in
                 withAnimation(.smooth(duration: 0.3)) {
                     ids.forEach { model.move($0, to: section, before: app.id) }
                 }
-                return true
-            } isTargeted: { isTargeted = $0 }
+            })
     }
 }
 
 private struct AppRow: View {
     let app: MenuApp
+    /// Set for system items, which a − button takes out of the menu bar.
+    var onRemove: (() -> Void)? = nil
     @State private var isHovered = false
 
     var body: some View {
@@ -155,6 +208,16 @@ private struct AppRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Remove from the menu bar")
+                .opacity(isHovered ? 1 : 0)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
