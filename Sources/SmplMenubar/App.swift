@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Picks up Full Disk Access as soon as it's granted, and apps that start later.
         Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self, !self.model.isDragging else { return }
                 // A failed write is retried until one goes through, even if the list reads fine meanwhile.
                 let retry = self.model.accessError || self.model.writePending
                 if retry || self.window?.isVisible == true { self.model.refresh() }
@@ -263,7 +263,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
-            window.isMovableByWindowBackground = true
+            // Window dragging lives in ArrangeView via WindowDragGesture so AppKit never hijacks row drags.
+            window.isMovableByWindowBackground = false
             window.setContentSize(NSSize(width: 980, height: 540))
             window.isReleasedWhenClosed = false
             // Like System Settings: no full screen; the green button makes the window full height.

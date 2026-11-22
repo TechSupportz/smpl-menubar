@@ -51,6 +51,16 @@ final class Model {
     /// A switch write failed and the state it wanted isn't on screen yet. Only a successful
     /// write clears it; reading the list fine (which clears `accessError`) doesn't.
     private(set) var writePending = false
+    /// Set while Arrange is mid-drag so background refreshes don't mutate the list under the pointer.
+    @ObservationIgnored var isDragging = false {
+        didSet {
+            if !isDragging, needsRefreshAfterDrag {
+                needsRefreshAfterDrag = false
+                refresh()
+            }
+        }
+    }
+    @ObservationIgnored private var needsRefreshAfterDrag = false
 
     /// Hidden section revealed by hovering the menu bar.
     private(set) var hoverShown = false
@@ -189,7 +199,11 @@ final class Model {
             // A reorder leaves every switch as it was. Reseating first keeps apply() from placing
             // the items itself and hiding which ones moved.
             if reseat { self.reseat(section) } else { self.apply() }
-            self.refresh()
+            if self.isDragging {
+                self.needsRefreshAfterDrag = true
+            } else {
+                self.refresh()
+            }
         }
     }
 
@@ -343,7 +357,7 @@ final class Model {
             accessError = true
             return
         }
-        accessError = false
+        if accessError { accessError = false }
         itemOwners = Dictionary(entries.map { ($0.bundleID, Set($0.itemBundleIDs + [$0.bundleID])) },
                                 uniquingKeysWith: { $0.union($1) })
         ControlCenterList.backupOnce(to: Self.backupURL)
@@ -373,9 +387,11 @@ final class Model {
             }
         }
         let byName: (MenuApp, MenuApp) -> Bool = { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        addableModules = addable.sorted(by: byName)
-        offElsewhere = elsewhere
-        apps = listed.sorted(by: byName)
+        let sortedAddable = addable.sorted(by: byName)
+        let sortedApps = listed.sorted(by: byName)
+        if addableModules != sortedAddable { addableModules = sortedAddable }
+        if offElsewhere != elsewhere { offElsewhere = elsewhere }
+        if apps != sortedApps { apps = sortedApps }
     }
 
     /// Writes the switches the current state calls for.
