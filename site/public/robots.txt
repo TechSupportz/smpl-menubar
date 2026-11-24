@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /analytics
+
+Sitemap: https://smpl-menubar.tnitish.com/sitemap.xml

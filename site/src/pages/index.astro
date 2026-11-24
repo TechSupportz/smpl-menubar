@@ -3,8 +3,31 @@ import "../styles/global.css";
 import MenuBarDemo from "../components/MenuBarDemo";
 
 const brew = "brew install --cask TechSupportz/tap/smpl-menubar";
-const title = "smpl.menubar";
-const description = "A tiny menu bar app for macOS that hides the icons you don't need.";
+const name = "smpl.menubar";
+const title = "smpl.menubar: hide menu bar icons on macOS";
+const description =
+  "A tiny, free macOS app that hides menu bar icons you don't need. Pick what stays visible, shows on hover, or waits for a click.";
+const site = Astro.site!.origin;
+const url = new URL("/", Astro.site).href;
+const image = `${site}/og.png`;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name,
+  description,
+  url,
+  image,
+  applicationCategory: "UtilitiesApplication",
+  operatingSystem: "macOS 27 or later",
+  // Not /download: crawlers following it would count as downloads.
+  downloadUrl: "https://github.com/TechSupportz/smpl-menubar/releases/latest",
+  screenshot: image,
+  license: "https://opensource.org/licenses/MIT",
+  isAccessibleForFree: true,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  sameAs: ["https://github.com/TechSupportz/smpl-menubar"],
+};
 ---
 <!doctype html>
 <html lang="en">
@@ -13,12 +36,25 @@ const description = "A tiny menu bar app for macOS that hides the icons you don'
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={url} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={name} />
+    <meta property="og:url" content={url} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:image" content="https://smpl-menubar.tnitish.com/og.png" />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The smpl.menubar icon and the line Your menu bar, minus the mess, above three Mac menu bars: visible icons only, icons shown on hover, and every icon after a click." />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
     <meta name="theme-color" content="#f2f2f3" />
     <link rel="icon" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="sitemap" href="/sitemap.xml" />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -78,9 +114,18 @@ const description = "A tiny menu bar app for macOS that hides the icons you don'
         </p>
       </section>
 
-      <section class="mx-auto mt-[clamp(2rem,6vh,4.5rem)] min-h-0 w-full max-w-6xl flex-1 lg:px-4">
-        <MenuBarDemo client:visible />
-      </section>
+      <figure class="mx-auto mt-[clamp(2rem,6vh,4.5rem)] min-h-0 w-full max-w-6xl flex-1 lg:px-4" aria-labelledby="demo-caption">
+        <!-- The animation is decorative to assistive tech; the caption says what it shows. -->
+        <div class="h-full" aria-hidden="true">
+          <MenuBarDemo client:visible />
+        </div>
+        <figcaption id="demo-caption" class="sr-only">
+          A demo of smpl.menubar on a Mac menu bar. At first only Wi‑Fi, battery, Spotlight, Control Center and the clock
+          show, next to a small dot. Resting the pointer on the menu bar reveals the hidden apps: weather, music and a timer.
+          Clicking the dot reveals the buried ones too: a clipboard manager and the keyboard menu. Clicking it again and
+          moving away tucks them all back.
+        </figcaption>
+      </figure>
     </main>
 
     <script>
